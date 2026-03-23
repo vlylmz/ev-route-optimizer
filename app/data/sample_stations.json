@@ -1,0 +1,270 @@
+[
+  {
+    "ID": 900001,
+    "UUID": "sample-ocm-001",
+    "UsageCost": "Ücretli",
+    "NumberOfPoints": 2,
+    "StatusType": {
+      "Title": "Operational",
+      "IsOperational": true
+    },
+    "OperatorInfo": {
+      "Title": "ZES"
+    },
+    "UsageType": {
+      "Title": "Public"
+    },
+    "AddressInfo": {
+      "Title": "Ankara Armada AVM DC Station",
+      "AddressLine1": "Eskişehir Yolu No:6",
+      "Town": "Ankara",
+      "StateOrProvince": "Çankaya",
+      "Postcode": "06520",
+      "Latitude": 39.9139,
+      "Longitude": 32.8094,
+      "Distance": 2.4
+    },
+    "Connections": [
+      {
+        "PowerKW": 120,
+        "Quantity": 1,
+        "ConnectionType": {
+          "Title": "CCS"
+        },
+        "CurrentType": {
+          "Title": "DC"
+        },
+        "Level": {
+          "IsFastChargeCapable": true
+        },
+        "StatusType": {
+          "Title": "Operational"
+        }
+      },
+      {
+        "PowerKW": 22,
+        "Quantity": 1,
+        "ConnectionType": {
+          "Title": "Type 2"
+        },
+        "CurrentType": {
+          "Title": "AC"
+        },
+        "Level": {
+          "IsFastChargeCapable": false
+        },
+        "StatusType": {
+          "Title": "Operational"
+        }
+      }
+    ]
+  },
+  {
+    "ID": 900002,
+    "UUID": "sample-ocm-002",
+    "UsageCost": "Ücretli",
+    "NumberOfPoints": 3,
+    "StatusType": {
+      "Title": "Operational",
+      "IsOperational": true
+    },
+    "OperatorInfo": {
+      "Title": "Eşarj"
+    },
+    "UsageType": {
+      "Title": "Public"
+    },
+    "AddressInfo": {
+      "Title": "Ankara Bilkent Station",
+      "AddressLine1": "Bilkent Center",
+      "Town": "Ankara",
+      "StateOrProvince": "Çankaya",
+      "Postcode": "06800",
+      "Latitude": 39.8747,
+      "Longitude": 32.7486,
+      "Distance": 7.1
+    },
+    "Connections": [
+      {
+        "PowerKW": 180,
+        "Quantity": 2,
+        "ConnectionType": {
+          "Title": "CCS"
+        },
+        "CurrentType": {
+          "Title": "DC"
+        },
+        "Level": {
+          "IsFastChargeCapable": true
+        },
+        "StatusType": {
+          "Title": "Operational"
+        }
+      },
+      {
+        "PowerKW": 22,
+        "Quantity": 1,
+        "ConnectionType": {
+          "Title": "Type 2"
+        },
+        "CurrentType": {
+          "Title": "AC"
+        },
+        "Level": {
+          "IsFastChargeCapable": false
+        },
+        "StatusType": {
+          "Title": "Operational"
+        }
+      }
+    ]
+  },
+  {
+    "ID": 900003,
+    "UUID": "sample-ocm-003",
+    "UsageCost": "Ücretli",
+    "NumberOfPoints": 2,
+    "StatusType": {
+      "Title": "Operational",
+      "IsOperational": true
+    },
+    "OperatorInfo": {
+      "Title": "Trugo"
+    },
+    "UsageType": {
+      "Title": "Public"
+    },
+    "AddressInfo": {
+      "Title": "Polatlı Highway Station",
+      "AddressLine1": "Ankara - Eskişehir Yolu Üzeri",
+      "Town": "Polatlı",
+      "StateOrProvince": "Ankara",
+      "Postcode": "06900",
+      "Latitude": 39.5849,
+      "Longitude": 32.1478,
+      "Distance": 58.3
+    },
+    "Connections": [
+      {
+        "PowerKW": 180,
+        "Quantity": 2,
+        "ConnectionType": {
+          "Title": "CCS"
+        },
+        "CurrentType": {
+          "Title": "DC"
+        },
+        "Level": {
+          "IsFastChargeCapable": true
+        },
+        "StatusType": {
+          "Title": "Operational"
+        }
+      }
+    ]
+  },
+  {
+    "ID": 900004,
+    "UUID": "sample-ocm-004",
+    "UsageCost": "Ücretli",
+    "NumberOfPoints": 2,
+    "StatusType": {
+      "Title": "Operational",
+      "IsOperational": true
+    },
+    "OperatorInfo": {
+      "Title": "ZES"
+    },
+    "UsageType": {
+      "Title": "Public"
+    },
+    "AddressInfo": {
+      "Title": "Sivrihisar Roadside Station",
+      "AddressLine1": "D200 Karayolu Üzeri",
+      "Town": "Sivrihisar",
+      "StateOrProvince": "Eskişehir",
+      "Postcode": "26600",
+      "Latitude": 39.4492,
+      "Longitude": 31.5361,
+      "Distance": 135.7
+    },
+    "Connections": [
+      {
+        "PowerKW": 90,
+        "Quantity": 2,
+        "ConnectionType": {
+          "Title": "CCS"
+        },
+        "CurrentType": {
+          "Title": "DC"
+        },
+        "Level": {
+          "IsFastChargeCapable": true
+        },
+        "StatusType": {
+          "Title": "Operational"
+        }
+      }
+    ]
+  },
+  {
+    "ID": 900005,
+    "UUID": "sample-ocm-005",
+    "UsageCost": "Ücretli",
+    "NumberOfPoints": 4,
+    "StatusType": {
+      "Title": "Operational",
+      "IsOperational": true
+    },
+    "OperatorInfo": {
+      "Title": "Eşarj"
+    },
+    "UsageType": {
+      "Title": "Public"
+    },
+    "AddressInfo": {
+      "Title": "Eskişehir Vega Outlet Station",
+      "AddressLine1": "Bursa Yolu 3. Km",
+      "Town": "Eskişehir",
+      "StateOrProvince": "Tepebaşı",
+      "Postcode": "26130",
+      "Latitude": 39.7834,
+      "Longitude": 30.4998,
+      "Distance": 2.1
+    },
+    "Connections": [
+      {
+        "PowerKW": 120,
+        "Quantity": 2,
+        "ConnectionType": {
+          "Title": "CCS"
+        },
+        "CurrentType": {
+          "Title": "DC"
+        },
+        "Level": {
+          "IsFastChargeCapable": true
+        },
+        "StatusType": {
+          "Title": "Operational"
+        }
+      },
+      {
+        "PowerKW": 22,
+        "Quantity": 2,
+        "ConnectionType": {
+          "Title": "Type 2"
+        },
+        "CurrentType": {
+          "Title": "AC"
+        },
+        "Level": {
+          "IsFastChargeCapable": false
+        },
+        "StatusType": {
+          "Title": "Operational"
+        }
+      }
+    ]
+  }
+]
