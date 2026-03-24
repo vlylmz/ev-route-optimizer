@@ -25,7 +25,7 @@ def _pick(data: Dict[str, Any], *keys: str, default: Any = None) -> Any:
 
 class RouteProfiles:
     """
-    Faz 3 için çoklu rota profili üretir.
+    Faz 3/4 için çoklu rota profili üretir.
 
     Aynı route_context + simulation_result + charge_need
     üstünden 3 farklı strateji çıkarır:
@@ -33,12 +33,9 @@ class RouteProfiles:
     - efficient -> en düşük enerji / düşük sapma odaklı
     - balanced  -> orta yol
 
-    Çıktı:
-    - her profilin detaylı planı
-    - kart formatına uygun özet liste
-    - en hızlı profil
-    - en verimli profil
-    - önerilen profil
+    Ek olarak:
+    - profile bazında ml_summary taşır
+    - kart yapısına ML kullanım bilgisini ekler
     """
 
     STRATEGY_LABELS = {
@@ -87,10 +84,17 @@ class RouteProfiles:
                 strategy=strategy,
             )
 
+            profile_ml_summary = self._extract_ml_summary(
+                plan_result=plan_result,
+                simulation_result=simulation_result,
+                charge_need=charge_need,
+            )
+
             profiles[strategy] = {
                 "key": strategy,
                 "label": self.STRATEGY_LABELS.get(strategy, strategy.title()),
                 **plan_result,
+                "ml_summary": profile_ml_summary,
             }
 
         profile_cards = self._build_profile_cards(profiles)
@@ -108,6 +112,11 @@ class RouteProfiles:
 
         status = "ok" if feasible_profiles else "no_feasible_profiles"
 
+        profiles_using_ml = [
+            key for key, profile in profiles.items()
+            if bool(_pick(profile.get("ml_summary", {}), "used_ml", default=False))
+        ]
+
         return {
             "status": status,
             "profiles": profiles,
@@ -115,6 +124,8 @@ class RouteProfiles:
             "best_by_time": best_by_time,
             "best_by_energy": best_by_energy,
             "recommended_profile": recommended_profile,
+            "profiles_using_ml": profiles_using_ml,
+            "any_profile_used_ml": len(profiles_using_ml) > 0,
             "message": self._build_message(
                 status=status,
                 recommended_profile=recommended_profile,
@@ -188,6 +199,78 @@ class RouteProfiles:
 
         raise TypeError("charging_planner kullanilabilir degil.")
 
+    def _extract_ml_summary(
+        self,
+        *,
+        plan_result: Dict[str, Any],
+        simulation_result: Dict[str, Any],
+        charge_need: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        plan_ml = _pick(plan_result, "ml_summary", default={}) or {}
+
+        used_ml = bool(
+            _pick(
+                plan_ml,
+                "used_ml",
+                default=_pick(
+                    charge_need,
+                    "used_ml",
+                    default=_pick(simulation_result, "used_ml", default=False),
+                ),
+            )
+        )
+
+        ml_segment_count = int(
+            _safe_float(
+                _pick(
+                    plan_ml,
+                    "ml_segment_count",
+                    default=_pick(
+                        charge_need,
+                        "ml_segment_count",
+                        default=_pick(simulation_result, "ml_segment_count", default=0),
+                    ),
+                ),
+                0,
+            )
+        )
+
+        heuristic_segment_count = int(
+            _safe_float(
+                _pick(
+                    plan_ml,
+                    "heuristic_segment_count",
+                    default=_pick(
+                        charge_need,
+                        "heuristic_segment_count",
+                        default=_pick(
+                            simulation_result,
+                            "heuristic_segment_count",
+                            default=0,
+                        ),
+                    ),
+                ),
+                0,
+            )
+        )
+
+        model_version = _pick(
+            plan_ml,
+            "model_version",
+            default=_pick(
+                charge_need,
+                "model_version",
+                default=_pick(simulation_result, "model_version", default=None),
+            ),
+        )
+
+        return {
+            "used_ml": used_ml,
+            "ml_segment_count": ml_segment_count,
+            "heuristic_segment_count": heuristic_segment_count,
+            "model_version": model_version,
+        }
+
     def _build_profile_cards(
         self,
         profiles: Dict[str, Dict[str, Any]],
@@ -201,6 +284,7 @@ class RouteProfiles:
 
             profile = profiles[key]
             summary = _pick(profile, "summary", default={}) or {}
+            ml_summary = _pick(profile, "ml_summary", default={}) or {}
 
             cards.append(
                 {
@@ -228,6 +312,14 @@ class RouteProfiles:
                         2,
                     ),
                     "stop_count": int(_safe_float(_pick(summary, "stop_count"), 0)),
+                    "used_ml": bool(_pick(ml_summary, "used_ml", default=False)),
+                    "ml_segment_count": int(
+                        _safe_float(_pick(ml_summary, "ml_segment_count"), 0)
+                    ),
+                    "heuristic_segment_count": int(
+                        _safe_float(_pick(ml_summary, "heuristic_segment_count"), 0)
+                    ),
+                    "model_version": _pick(ml_summary, "model_version", default=None),
                 }
             )
 
@@ -268,12 +360,10 @@ class RouteProfiles:
     ) -> Optional[str]:
         feasible = self._feasible_profiles(profiles)
 
-        # Öncelik: Dengeli -> Hizli -> Verimli
         for preferred in ["balanced", "fast", "efficient"]:
             if preferred in feasible:
                 return preferred
 
-        # Hiç feasible yoksa yine bir fallback dönelim.
         if "balanced" in profiles:
             return "balanced"
         if "fast" in profiles:
@@ -360,6 +450,10 @@ if __name__ == "__main__":
     simulation_result = {
         "initial_soc": 80,
         "total_energy_kwh": 54,
+        "used_ml": True,
+        "ml_segment_count": 3,
+        "heuristic_segment_count": 0,
+        "model_version": "lgbm_v1",
         "segments": [
             {"cumulative_distance_km": 100, "soc_after": 60},
             {"cumulative_distance_km": 200, "soc_after": 32},
@@ -371,6 +465,10 @@ if __name__ == "__main__":
         "needs_charging": True,
         "critical_distance_km": 210,
         "reserve_soc_percent": 10,
+        "used_ml": True,
+        "ml_segment_count": 3,
+        "heuristic_segment_count": 0,
+        "model_version": "lgbm_v1",
     }
 
     engine = RouteProfiles()

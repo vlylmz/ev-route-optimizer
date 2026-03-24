@@ -147,3 +147,23 @@ def test_charge_required_when_below_reserve():
     assert result.minimum_soc_pct == 4.0
     assert result.estimated_additional_soc_needed_pct > 0
     assert result.estimated_additional_energy_needed_kwh > 0
+def test_charge_need_analysis_propagates_ml_metadata():
+    analyzer = ChargeNeedAnalyzer()
+
+    simulation = build_simulation_ok()
+    simulation.used_ml = True
+    simulation.ml_segment_count = 3
+    simulation.heuristic_segment_count = 0
+    simulation.model_version = "lgbm_v1"
+
+    result = analyzer.analyze(
+        simulation=simulation,
+        usable_battery_kwh=57.5,
+        reserve_soc_pct=10.0,
+    )
+
+    assert result.used_ml is True
+    assert result.ml_segment_count == 3
+    assert result.heuristic_segment_count == 0
+    assert result.model_version == "lgbm_v1"
+    assert "ML" in result.recommendation

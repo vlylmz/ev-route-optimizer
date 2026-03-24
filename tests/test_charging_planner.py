@@ -159,3 +159,69 @@ def test_returns_no_feasible_plan_when_no_station_found():
     assert result["status"] == "no_feasible_plan"
     assert result["feasible"] is False
     assert result["recommended_stops"] == []
+def test_build_plan_propagates_ml_summary():
+    planner = ChargingPlanner()
+
+    vehicle = {
+        "usable_battery_kwh": 60,
+        "ideal_consumption_wh_km": 180,
+    }
+
+    route_context = {
+        "route": {
+            "distance_km": 300,
+            "duration_min": 260,
+        }
+    }
+
+    simulation_result = {
+        "initial_soc": 80,
+        "total_energy_kwh": 54,
+        "used_ml": True,
+        "ml_segment_count": 3,
+        "heuristic_segment_count": 0,
+        "model_version": "lgbm_v1",
+        "segments": [
+            {"cumulative_distance_km": 100, "soc_after": 60},
+            {"cumulative_distance_km": 200, "soc_after": 32},
+            {"cumulative_distance_km": 300, "soc_after": 6},
+        ],
+    }
+
+    charge_need = {
+        "needs_charging": True,
+        "reserve_soc_percent": 10,
+        "used_ml": True,
+        "ml_segment_count": 3,
+        "heuristic_segment_count": 0,
+        "model_version": "lgbm_v1",
+    }
+
+    selector_result = {
+        "selected_station": {
+            "name": "Ankara DC",
+            "distance_along_route_km": 150,
+            "remaining_distance_km": 150,
+            "detour_distance_km": 3.0,
+            "detour_minutes": 4.5,
+            "soc_at_arrival_percent": 46.0,
+            "target_soc_percent": 62.0,
+            "charge_minutes": 11.0,
+            "power_kw": 120,
+        }
+    }
+
+    result = planner.build_plan(
+        vehicle=vehicle,
+        route_context=route_context,
+        simulation_result=simulation_result,
+        charge_need=charge_need,
+        selector_result=selector_result,
+        strategy="balanced",
+    )
+
+    assert result["ml_summary"]["used_ml"] is True
+    assert result["ml_summary"]["ml_segment_count"] == 3
+    assert result["ml_summary"]["heuristic_segment_count"] == 0
+    assert result["ml_summary"]["model_version"] == "lgbm_v1"
+    assert "ML" in result["message"]

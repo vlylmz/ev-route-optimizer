@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pprint import pprint
+from dataclasses import asdict, is_dataclass
 from typing import Any, Dict, Iterable, List, Optional
 
 from app.core.charging_stop_selector import ChargingStopSelector
@@ -22,17 +22,23 @@ def _pick(data: Dict[str, Any], *keys: str, default: Any = None) -> Any:
     return default
 
 
+def _to_plain(obj: Any) -> Any:
+    if is_dataclass(obj):
+        return _to_plain(asdict(obj))
+    if isinstance(obj, dict):
+        return {k: _to_plain(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_to_plain(v) for v in obj]
+    return obj
+
+
 class RoutePlanner:
     """
     Mevcut zinciri tek noktada birleştiren orkestrasyon katmanı.
 
-    Akış:
-    start/end
-      -> route_context_service
-      -> route_energy_simulator
-      -> charge_need_analyzer
-      -> charging_stop_selector
-      -> birleşik plan çıktısı
+    Desteklediği akışlar:
+    - Eski dict tabanlı servisler
+    - Yeni dataclass tabanlı simulator / analyzer
     """
 
     def __init__(
@@ -53,22 +59,29 @@ class RoutePlanner:
         *,
         start: Any,
         end: Any,
-        vehicle: Dict[str, Any],
+        vehicle: Any,
         initial_soc: float,
         strategy: str = "balanced",
     ) -> Dict[str, Any]:
         route_context = self._build_route_context(start=start, end=end)
 
-        simulation_result = self._simulate_route(
+        simulation_result_raw = self._simulate_route(
             vehicle=vehicle,
             route_context=route_context,
             initial_soc=initial_soc,
         )
+        simulation_result = self._normalize_simulation_result(simulation_result_raw)
 
-        charge_need = self._analyze_charge_need(
+        charge_need_raw = self._analyze_charge_need(
             vehicle=vehicle,
             route_context=route_context,
+            simulation_result_raw=simulation_result_raw,
             simulation_result=simulation_result,
+        )
+        charge_need = self._normalize_charge_need(
+            charge_need_raw=charge_need_raw,
+            simulation_result=simulation_result,
+            vehicle=vehicle,
         )
 
         charging_plan = self._select_charging_stop(
@@ -94,21 +107,28 @@ class RoutePlanner:
     def plan_from_context(
         self,
         *,
-        vehicle: Dict[str, Any],
+        vehicle: Any,
         route_context: Dict[str, Any],
         initial_soc: float,
         strategy: str = "balanced",
     ) -> Dict[str, Any]:
-        simulation_result = self._simulate_route(
+        simulation_result_raw = self._simulate_route(
             vehicle=vehicle,
             route_context=route_context,
             initial_soc=initial_soc,
         )
+        simulation_result = self._normalize_simulation_result(simulation_result_raw)
 
-        charge_need = self._analyze_charge_need(
+        charge_need_raw = self._analyze_charge_need(
             vehicle=vehicle,
             route_context=route_context,
+            simulation_result_raw=simulation_result_raw,
             simulation_result=simulation_result,
+        )
+        charge_need = self._normalize_charge_need(
+            charge_need_raw=charge_need_raw,
+            simulation_result=simulation_result,
+            vehicle=vehicle,
         )
 
         charging_plan = self._select_charging_stop(
@@ -150,10 +170,10 @@ class RoutePlanner:
     def _simulate_route(
         self,
         *,
-        vehicle: Dict[str, Any],
+        vehicle: Any,
         route_context: Dict[str, Any],
         initial_soc: float,
-    ) -> Dict[str, Any]:
+    ) -> Any:
         return self._call_first_supported(
             service=self.route_energy_simulator,
             method_names=[
@@ -166,6 +186,11 @@ class RoutePlanner:
                     "vehicle": vehicle,
                     "route_context": route_context,
                     "initial_soc": initial_soc,
+                },
+                {
+                    "vehicle": vehicle,
+                    "route_context": route_context,
+                    "start_soc_pct": initial_soc,
                 },
                 {
                     "vehicle": vehicle,
@@ -184,10 +209,14 @@ class RoutePlanner:
     def _analyze_charge_need(
         self,
         *,
-        vehicle: Dict[str, Any],
+        vehicle: Any,
         route_context: Dict[str, Any],
+        simulation_result_raw: Any,
         simulation_result: Dict[str, Any],
-    ) -> Dict[str, Any]:
+    ) -> Any:
+        usable_battery_kwh = self._vehicle_usable_battery_kwh(vehicle)
+        reserve_soc_pct = self._vehicle_reserve_soc_pct(vehicle)
+
         return self._call_first_supported(
             service=self.charge_need_analyzer,
             method_names=[
@@ -199,17 +228,27 @@ class RoutePlanner:
                 {
                     "vehicle": vehicle,
                     "route_context": route_context,
-                    "simulation_result": simulation_result,
+                    "simulation_result": simulation_result_raw,
                 },
                 {
                     "vehicle": vehicle,
                     "route": route_context,
-                    "simulation": simulation_result,
+                    "simulation": simulation_result_raw,
                 },
                 {
                     "vehicle": vehicle,
                     "context": route_context,
-                    "result": simulation_result,
+                    "result": simulation_result_raw,
+                },
+                {
+                    "simulation": simulation_result_raw,
+                    "usable_battery_kwh": usable_battery_kwh,
+                    "reserve_soc_pct": reserve_soc_pct,
+                },
+                {
+                    "simulation": simulation_result,
+                    "usable_battery_kwh": usable_battery_kwh,
+                    "reserve_soc_pct": reserve_soc_pct,
                 },
             ],
             service_name="charge_need_analyzer",
@@ -218,14 +257,20 @@ class RoutePlanner:
     def _select_charging_stop(
         self,
         *,
-        vehicle: Dict[str, Any],
+        vehicle: Any,
         route_context: Dict[str, Any],
         simulation_result: Dict[str, Any],
         charge_need: Dict[str, Any],
         strategy: str,
     ) -> Dict[str, Any]:
         needs_charging = bool(
-            _pick(charge_need, "needs_charging", "requires_charging", default=False)
+            _pick(
+                charge_need,
+                "needs_charging",
+                "requires_charging",
+                "charging_required",
+                default=False,
+            )
         )
 
         if not needs_charging:
@@ -240,7 +285,7 @@ class RoutePlanner:
 
         if hasattr(selector, "select_stop") and callable(selector.select_stop):
             return selector.select_stop(
-                vehicle=vehicle,
+                vehicle=self._vehicle_to_selector_payload(vehicle),
                 route_context=route_context,
                 simulation_result=simulation_result,
                 charge_need=charge_need,
@@ -249,7 +294,7 @@ class RoutePlanner:
 
         if callable(selector):
             return selector(
-                vehicle=vehicle,
+                vehicle=self._vehicle_to_selector_payload(vehicle),
                 route_context=route_context,
                 simulation_result=simulation_result,
                 charge_need=charge_need,
@@ -263,7 +308,7 @@ class RoutePlanner:
         *,
         start: Any,
         end: Any,
-        vehicle: Dict[str, Any],
+        vehicle: Any,
         initial_soc: float,
         route_context: Dict[str, Any],
         simulation_result: Dict[str, Any],
@@ -285,7 +330,6 @@ class RoutePlanner:
             _pick(simulation_result, "total_energy_kwh", "energy_used_kwh"),
             0.0,
         )
-
         final_soc = self._extract_final_soc(simulation_result)
 
         return {
@@ -294,11 +338,8 @@ class RoutePlanner:
             "end": end,
             "strategy": strategy,
             "vehicle": {
-                "name": _pick(vehicle, "name", "model", default="unknown"),
-                "usable_battery_kwh": _safe_float(
-                    _pick(vehicle, "usable_battery_kwh", "battery_capacity_kwh"),
-                    0.0,
-                ),
+                "name": self._vehicle_name(vehicle),
+                "usable_battery_kwh": round(self._vehicle_usable_battery_kwh(vehicle), 2),
             },
             "route_summary": {
                 "distance_km": round(route_distance_km, 2),
@@ -309,6 +350,12 @@ class RoutePlanner:
                 "final_soc_percent": round(final_soc, 2),
                 "total_energy_kwh": round(total_energy_kwh, 2),
             },
+            "ml_summary": {
+                "used_ml": bool(_pick(simulation_result, "used_ml", default=False)),
+                "ml_segment_count": int(_safe_float(_pick(simulation_result, "ml_segment_count"), 0)),
+                "heuristic_segment_count": int(_safe_float(_pick(simulation_result, "heuristic_segment_count"), 0)),
+                "model_version": _pick(simulation_result, "model_version", default=None),
+            },
             "charge_need": charge_need,
             "charging_plan": charging_plan,
             "raw": {
@@ -316,6 +363,157 @@ class RoutePlanner:
                 "simulation_result": simulation_result,
             },
         }
+
+    def _normalize_simulation_result(self, simulation_result: Any) -> Dict[str, Any]:
+        raw = _to_plain(simulation_result)
+
+        if not isinstance(raw, dict):
+            return {}
+
+        segments = raw.get("segments") or raw.get("segment_results") or []
+        normalized_segments: List[Dict[str, Any]] = []
+
+        prev_cumulative = 0.0
+        cumulative = 0.0
+
+        for index, seg in enumerate(segments, start=1):
+            if not isinstance(seg, dict):
+                continue
+
+            seg_distance = _safe_float(
+                _pick(seg, "distance_km", "segment_length_km", "length_km"),
+                0.0,
+            )
+
+            cumulative_distance = _pick(seg, "cumulative_distance_km", default=None)
+            if cumulative_distance is not None:
+                cumulative = _safe_float(cumulative_distance, prev_cumulative)
+                if seg_distance <= 0:
+                    seg_distance = max(cumulative - prev_cumulative, 0.0)
+            else:
+                cumulative = prev_cumulative + seg_distance
+
+            normalized_segments.append(
+                {
+                    **seg,
+                    "segment_no": int(_safe_float(_pick(seg, "segment_no"), index)),
+                    "distance_km": seg_distance,
+                    "cumulative_distance_km": cumulative,
+                    "soc_after": _safe_float(
+                        _pick(seg, "soc_after", "end_soc_pct", "end_soc", "remaining_soc"),
+                        0.0,
+                    ),
+                    "soc_before": _safe_float(
+                        _pick(seg, "soc_before", "start_soc_pct", "start_soc"),
+                        0.0,
+                    ),
+                }
+            )
+            prev_cumulative = cumulative
+
+        initial_soc = _safe_float(
+            _pick(raw, "initial_soc", "start_soc_pct"),
+            0.0,
+        )
+
+        final_soc = _pick(raw, "final_soc", "end_soc_pct", "remaining_soc", default=None)
+        if final_soc is None and normalized_segments:
+            final_soc = normalized_segments[-1]["soc_after"]
+
+        return {
+            **raw,
+            "initial_soc": initial_soc,
+            "final_soc": _safe_float(final_soc, 0.0),
+            "total_energy_kwh": _safe_float(
+                _pick(raw, "total_energy_kwh", "energy_used_kwh"),
+                0.0,
+            ),
+            "used_ml": bool(_pick(raw, "used_ml", default=False)),
+            "ml_segment_count": int(_safe_float(_pick(raw, "ml_segment_count"), 0)),
+            "heuristic_segment_count": int(_safe_float(_pick(raw, "heuristic_segment_count"), 0)),
+            "model_version": _pick(raw, "model_version", default=None),
+            "segments": normalized_segments,
+        }
+
+    def _normalize_charge_need(
+        self,
+        *,
+        charge_need_raw: Any,
+        simulation_result: Dict[str, Any],
+        vehicle: Any,
+    ) -> Dict[str, Any]:
+        raw = _to_plain(charge_need_raw)
+        if not isinstance(raw, dict):
+            raw = {}
+
+        if "needs_charging" in raw or "requires_charging" in raw:
+            normalized = dict(raw)
+        else:
+            normalized = {
+                **raw,
+                "needs_charging": bool(_pick(raw, "charging_required", default=False)),
+                "reserve_soc_percent": _safe_float(
+                    _pick(raw, "reserve_soc_pct"),
+                    self._vehicle_reserve_soc_pct(vehicle),
+                ),
+                "min_soc_percent": _safe_float(
+                    _pick(raw, "minimum_soc_pct", "end_soc_pct"),
+                    _safe_float(_pick(simulation_result, "final_soc"), 0.0),
+                ),
+                "critical_segment_no": _pick(raw, "critical_segment_no", default=None),
+                "estimated_additional_soc_needed_pct": _safe_float(
+                    _pick(raw, "estimated_additional_soc_needed_pct"),
+                    0.0,
+                ),
+                "estimated_additional_energy_needed_kwh": _safe_float(
+                    _pick(raw, "estimated_additional_energy_needed_kwh"),
+                    0.0,
+                ),
+                "recommendation": _pick(raw, "recommendation", default=""),
+                "used_ml": bool(_pick(raw, "used_ml", default=_pick(simulation_result, "used_ml", default=False))),
+                "ml_segment_count": int(_safe_float(_pick(raw, "ml_segment_count", default=_pick(simulation_result, "ml_segment_count", default=0)), 0)),
+                "heuristic_segment_count": int(_safe_float(_pick(raw, "heuristic_segment_count", default=_pick(simulation_result, "heuristic_segment_count", default=0)), 0)),
+                "model_version": _pick(raw, "model_version", default=_pick(simulation_result, "model_version", default=None)),
+            }
+
+        if "critical_distance_km" not in normalized or normalized["critical_distance_km"] is None:
+            critical_segment_no = _pick(normalized, "critical_segment_no", default=None)
+            normalized["critical_distance_km"] = self._critical_distance_from_segment_no(
+                simulation_result=simulation_result,
+                critical_segment_no=critical_segment_no,
+            )
+
+        if "reserve_soc_percent" not in normalized or normalized["reserve_soc_percent"] is None:
+            normalized["reserve_soc_percent"] = self._vehicle_reserve_soc_pct(vehicle)
+
+        if "min_soc_percent" not in normalized or normalized["min_soc_percent"] is None:
+            normalized["min_soc_percent"] = _safe_float(
+                _pick(normalized, "minimum_soc_pct"),
+                _safe_float(_pick(simulation_result, "final_soc"), 0.0),
+            )
+
+        return normalized
+
+    def _critical_distance_from_segment_no(
+        self,
+        *,
+        simulation_result: Dict[str, Any],
+        critical_segment_no: Any,
+    ) -> Optional[float]:
+        if critical_segment_no is None:
+            return None
+
+        try:
+            critical_segment_no = int(critical_segment_no)
+        except (TypeError, ValueError):
+            return None
+
+        segments = _pick(simulation_result, "segments", default=[]) or []
+        for seg in segments:
+            if int(_safe_float(_pick(seg, "segment_no"), 0)) == critical_segment_no:
+                return _safe_float(_pick(seg, "cumulative_distance_km"), None)
+
+        return None
 
     def _extract_final_soc(self, simulation_result: Dict[str, Any]) -> float:
         direct_soc = _pick(
@@ -338,6 +536,62 @@ class RoutePlanner:
 
         return 0.0
 
+    def _vehicle_name(self, vehicle: Any) -> str:
+        if isinstance(vehicle, dict):
+            return str(_pick(vehicle, "name", "model", default="unknown"))
+        if hasattr(vehicle, "full_name"):
+            return str(vehicle.full_name)
+        if hasattr(vehicle, "model"):
+            return str(getattr(vehicle, "model"))
+        return "unknown"
+
+    def _vehicle_usable_battery_kwh(self, vehicle: Any) -> float:
+        if isinstance(vehicle, dict):
+            return _safe_float(_pick(vehicle, "usable_battery_kwh", "battery_capacity_kwh"), 0.0)
+        if hasattr(vehicle, "usable_battery_kwh"):
+            return _safe_float(getattr(vehicle, "usable_battery_kwh"), 0.0)
+        if hasattr(vehicle, "battery_capacity_kwh"):
+            return _safe_float(getattr(vehicle, "battery_capacity_kwh"), 0.0)
+        return 0.0
+
+    def _vehicle_reserve_soc_pct(self, vehicle: Any) -> float:
+        if isinstance(vehicle, dict):
+            return _safe_float(
+                _pick(vehicle, "routing_reserve_soc_pct", "soc_min_pct"),
+                10.0,
+            )
+        if hasattr(vehicle, "routing_reserve_soc_pct"):
+            return _safe_float(getattr(vehicle, "routing_reserve_soc_pct"), 10.0)
+        if hasattr(vehicle, "soc_min_pct"):
+            return _safe_float(getattr(vehicle, "soc_min_pct"), 10.0)
+        return 10.0
+
+    def _vehicle_to_selector_payload(self, vehicle: Any) -> Dict[str, Any]:
+        if isinstance(vehicle, dict):
+            return dict(vehicle)
+
+        payload = {
+            "name": self._vehicle_name(vehicle),
+            "usable_battery_kwh": self._vehicle_usable_battery_kwh(vehicle),
+            "ideal_consumption_wh_km": _safe_float(
+                getattr(vehicle, "ideal_consumption_wh_km", 180.0),
+                180.0,
+            ),
+            "max_dc_charge_power_kw": _safe_float(
+                getattr(vehicle, "max_dc_charge_kw", getattr(vehicle, "max_dc_charge_power_kw", 50.0)),
+                50.0,
+            ),
+        }
+
+        if hasattr(vehicle, "id"):
+            payload["id"] = getattr(vehicle, "id")
+            payload["vehicle_id"] = getattr(vehicle, "id")
+
+        if hasattr(vehicle, "temp_penalty_factor"):
+            payload["temp_penalty_factor"] = getattr(vehicle, "temp_penalty_factor")
+
+        return payload
+
     def _call_first_supported(
         self,
         *,
@@ -345,7 +599,7 @@ class RoutePlanner:
         method_names: Iterable[str],
         kwargs_options: List[Dict[str, Any]],
         service_name: str,
-    ) -> Dict[str, Any]:
+    ) -> Any:
         for method_name in method_names:
             method = getattr(service, method_name, None)
             if not callable(method):
@@ -361,7 +615,8 @@ class RoutePlanner:
                     continue
 
         available = [
-            name for name in dir(service)
+            name
+            for name in dir(service)
             if not name.startswith("_") and callable(getattr(service, name))
         ]
         raise AttributeError(
@@ -369,116 +624,3 @@ class RoutePlanner:
             f"Denenen methodlar: {list(method_names)} | "
             f"Mevcut callables: {available}"
         )
-
-
-# -------------------------------------------------------------------
-# Aşağısı sadece python -m app.core.route_planner ile hızlı deneme için
-# -------------------------------------------------------------------
-
-class _DemoRouteContextService:
-    def build_route_context(self, start: Any, end: Any) -> Dict[str, Any]:
-        return {
-            "start": start,
-            "end": end,
-            "route": {
-                "distance_km": 300,
-                "duration_min": 260,
-                "geometry": [
-                    {"lat": 39.0, "lon": 32.0},
-                    {"lat": 39.2, "lon": 32.2},
-                    {"lat": 39.4, "lon": 32.4},
-                    {"lat": 39.6, "lon": 32.6},
-                ],
-            },
-            "stations": [
-                {
-                    "name": "Yakin Hizli Istasyon",
-                    "distance_along_route_km": 150,
-                    "distance_from_route_km": 1.5,
-                    "power_kw": 120,
-                    "is_operational": True,
-                },
-                {
-                    "name": "Cok Yakin Ama Yavas",
-                    "distance_along_route_km": 145,
-                    "distance_from_route_km": 0.3,
-                    "power_kw": 50,
-                    "is_operational": True,
-                },
-            ],
-        }
-
-
-class _DemoRouteEnergySimulator:
-    def simulate(
-        self,
-        *,
-        vehicle: Dict[str, Any],
-        route_context: Dict[str, Any],
-        initial_soc: float,
-    ) -> Dict[str, Any]:
-        return {
-            "initial_soc": initial_soc,
-            "total_energy_kwh": 54,
-            "segments": [
-                {"cumulative_distance_km": 100, "soc_after": 60},
-                {"cumulative_distance_km": 200, "soc_after": 32},
-                {"cumulative_distance_km": 300, "soc_after": 6},
-            ],
-        }
-
-
-class _DemoChargeNeedAnalyzer:
-    def analyze(
-        self,
-        *,
-        vehicle: Dict[str, Any],
-        route_context: Dict[str, Any],
-        simulation_result: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        final_soc = _safe_float(_pick(simulation_result, "final_soc"), -1.0)
-        if final_soc < 0:
-            segments = simulation_result.get("segments", [])
-            if segments:
-                final_soc = _safe_float(segments[-1].get("soc_after"), 0.0)
-            else:
-                final_soc = 0.0
-
-        if final_soc > 10:
-            return {
-                "needs_charging": False,
-                "critical_distance_km": None,
-                "reserve_soc_percent": 10,
-            }
-
-        return {
-            "needs_charging": True,
-            "critical_distance_km": 210,
-            "reserve_soc_percent": 10,
-        }
-
-
-if __name__ == "__main__":
-    vehicle = {
-        "name": "Demo EV",
-        "usable_battery_kwh": 60,
-        "ideal_consumption_wh_km": 180,
-        "max_dc_charge_power_kw": 120,
-    }
-
-    planner = RoutePlanner(
-        route_context_service=_DemoRouteContextService(),
-        route_energy_simulator=_DemoRouteEnergySimulator(),
-        charge_need_analyzer=_DemoChargeNeedAnalyzer(),
-        charging_stop_selector=ChargingStopSelector(),
-    )
-
-    result = planner.plan(
-        start="Ankara",
-        end="Eskisehir",
-        vehicle=vehicle,
-        initial_soc=80,
-        strategy="balanced",
-    )
-
-    pprint(result)

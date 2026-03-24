@@ -24,6 +24,12 @@ class ChargeNeedAnalysis:
     estimated_additional_energy_needed_kwh: float
     recommendation: str
 
+    # ML / fallback izleme alanları
+    used_ml: bool = False
+    ml_segment_count: int = 0
+    heuristic_segment_count: int = 0
+    model_version: Optional[str] = None
+
 
 class ChargeNeedAnalyzer:
     def analyze(
@@ -35,7 +41,11 @@ class ChargeNeedAnalyzer:
         if usable_battery_kwh <= 0:
             raise ValueError("usable_battery_kwh 0'dan büyük olmalı.")
 
-        minimum_soc_pct = min(seg.end_soc_pct for seg in simulation.segments) if simulation.segments else simulation.end_soc_pct
+        minimum_soc_pct = (
+            min(seg.end_soc_pct for seg in simulation.segments)
+            if simulation.segments
+            else simulation.end_soc_pct
+        )
 
         critical_segment = self._find_critical_segment(
             simulation.segments,
@@ -51,7 +61,9 @@ class ChargeNeedAnalyzer:
         if charging_required:
             deficit_pct = reserve_soc_pct - minimum_soc_pct
             additional_soc_needed_pct = max(0.0, deficit_pct)
-            additional_energy_needed_kwh = usable_battery_kwh * (additional_soc_needed_pct / 100.0)
+            additional_energy_needed_kwh = usable_battery_kwh * (
+                additional_soc_needed_pct / 100.0
+            )
 
         recommendation = self._build_recommendation(
             charging_required=charging_required,
@@ -59,6 +71,8 @@ class ChargeNeedAnalyzer:
             reserve_soc_pct=reserve_soc_pct,
             critical_segment=critical_segment,
             additional_soc_needed_pct=additional_soc_needed_pct,
+            used_ml=getattr(simulation, "used_ml", False),
+            model_version=getattr(simulation, "model_version", None),
         )
 
         return ChargeNeedAnalysis(
@@ -69,11 +83,21 @@ class ChargeNeedAnalyzer:
             end_soc_pct=round(simulation.end_soc_pct, 2),
             minimum_soc_pct=round(minimum_soc_pct, 2),
             critical_segment_no=critical_segment.segment_no if critical_segment else None,
-            critical_segment_start_soc_pct=round(critical_segment.start_soc_pct, 2) if critical_segment else None,
-            critical_segment_end_soc_pct=round(critical_segment.end_soc_pct, 2) if critical_segment else None,
+            critical_segment_start_soc_pct=round(critical_segment.start_soc_pct, 2)
+            if critical_segment
+            else None,
+            critical_segment_end_soc_pct=round(critical_segment.end_soc_pct, 2)
+            if critical_segment
+            else None,
             estimated_additional_soc_needed_pct=round(additional_soc_needed_pct, 2),
-            estimated_additional_energy_needed_kwh=round(additional_energy_needed_kwh, 3),
+            estimated_additional_energy_needed_kwh=round(
+                additional_energy_needed_kwh, 3
+            ),
             recommendation=recommendation,
+            used_ml=getattr(simulation, "used_ml", False),
+            ml_segment_count=getattr(simulation, "ml_segment_count", 0),
+            heuristic_segment_count=getattr(simulation, "heuristic_segment_count", 0),
+            model_version=getattr(simulation, "model_version", None),
         )
 
     @staticmethod
@@ -93,22 +117,34 @@ class ChargeNeedAnalyzer:
         reserve_soc_pct: float,
         critical_segment: Optional[RouteEnergySegmentResult],
         additional_soc_needed_pct: float,
+        used_ml: bool = False,
+        model_version: Optional[str] = None,
     ) -> str:
+        prediction_note = ""
+        if used_ml:
+            if model_version:
+                prediction_note = f" Tahmin kaynağı: ML ({model_version})."
+            else:
+                prediction_note = " Tahmin kaynağı: ML."
+
         if not charging_required:
             return (
                 f"Rota mevcut batarya ile tamamlanabilir. "
                 f"Tahmini varış SOC: %{end_soc_pct:.1f}, rezerv eşik: %{reserve_soc_pct:.1f}."
+                f"{prediction_note}"
             )
 
         if critical_segment is None:
             return (
                 f"Rota rezerv eşik altında kalıyor. "
                 f"Yaklaşık %{additional_soc_needed_pct:.1f} ek SOC gerekli."
+                f"{prediction_note}"
             )
 
         return (
             f"Şarj gerekli. Kritik düşüş {critical_segment.segment_no}. segmentte başlıyor. "
             f"Tahmini ek ihtiyaç: %{additional_soc_needed_pct:.1f} SOC."
+            f"{prediction_note}"
         )
 
     @staticmethod
@@ -126,6 +162,10 @@ class ChargeNeedAnalyzer:
             "estimated_additional_soc_needed_pct": result.estimated_additional_soc_needed_pct,
             "estimated_additional_energy_needed_kwh": result.estimated_additional_energy_needed_kwh,
             "recommendation": result.recommendation,
+            "used_ml": result.used_ml,
+            "ml_segment_count": result.ml_segment_count,
+            "heuristic_segment_count": result.heuristic_segment_count,
+            "model_version": result.model_version,
         }
 
 
@@ -181,4 +221,8 @@ if __name__ == "__main__":
     print("Critical segment:", analysis.critical_segment_no)
     print("Extra SOC needed (%):", analysis.estimated_additional_soc_needed_pct)
     print("Extra energy needed (kWh):", analysis.estimated_additional_energy_needed_kwh)
+    print("Used ML:", analysis.used_ml)
+    print("ML segment count:", analysis.ml_segment_count)
+    print("Heuristic segment count:", analysis.heuristic_segment_count)
+    print("Model version:", analysis.model_version)
     print("Recommendation:", analysis.recommendation)

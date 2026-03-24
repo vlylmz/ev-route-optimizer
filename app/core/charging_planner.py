@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pprint import pprint
 from typing import Any, Dict, Optional
 
 
@@ -29,6 +28,7 @@ class ChargingPlanner:
     - final trip metrics hesaplar
     - durak listesini normalize eder
     - toplam sure / toplam enerji / tahmini varis SOC dondurur
+    - ML kullanim ozetini yukari tasir
 
     Not:
     Ilk surum MVP icin tek durakli plan uretiyor.
@@ -55,7 +55,13 @@ class ChargingPlanner:
         strategy: str = "balanced",
     ) -> Dict[str, Any]:
         needs_charging = bool(
-            _pick(charge_need, "needs_charging", "requires_charging", default=False)
+            _pick(
+                charge_need,
+                "needs_charging",
+                "requires_charging",
+                "charging_required",
+                default=False,
+            )
         )
 
         route = _pick(route_context, "route", default={}) or {}
@@ -85,6 +91,11 @@ class ChargingPlanner:
             vehicle=vehicle,
         )
 
+        ml_summary = self._extract_ml_summary(
+            simulation_result=simulation_result,
+            charge_need=charge_need,
+        )
+
         if not needs_charging:
             return {
                 "status": "ok",
@@ -100,6 +111,7 @@ class ChargingPlanner:
                     "total_energy_kwh": round(total_energy_kwh, 2),
                     "projected_arrival_soc_percent": round(final_soc_without_charge, 2),
                 },
+                "ml_summary": ml_summary,
                 "message": "Şarj gerekmiyor.",
             }
 
@@ -120,6 +132,7 @@ class ChargingPlanner:
                     "total_energy_kwh": round(total_energy_kwh, 2),
                     "projected_arrival_soc_percent": None,
                 },
+                "ml_summary": ml_summary,
                 "message": "Uygun bir şarj planı oluşturulamadı.",
             }
 
@@ -128,6 +141,7 @@ class ChargingPlanner:
                 charge_need,
                 "reserve_soc_percent",
                 "min_soc_percent",
+                "reserve_soc_pct",
                 default=self.reserve_soc_default,
             ),
             self.reserve_soc_default,
@@ -215,12 +229,68 @@ class ChargingPlanner:
                 "total_energy_kwh": round(total_trip_energy_kwh, 2),
                 "projected_arrival_soc_percent": round(projected_arrival_soc_percent, 2),
             },
+            "ml_summary": ml_summary,
             "message": self._build_message(
                 station_name=station_name,
                 feasible=feasible,
                 projected_arrival_soc_percent=projected_arrival_soc_percent,
                 total_trip_minutes=total_trip_minutes,
+                used_ml=bool(_pick(ml_summary, "used_ml", default=False)),
+                model_version=_pick(ml_summary, "model_version", default=None),
             ),
+        }
+
+    def _extract_ml_summary(
+        self,
+        *,
+        simulation_result: Dict[str, Any],
+        charge_need: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        used_ml = bool(
+            _pick(
+                charge_need,
+                "used_ml",
+                default=_pick(simulation_result, "used_ml", default=False),
+            )
+        )
+
+        ml_segment_count = int(
+            _safe_float(
+                _pick(
+                    charge_need,
+                    "ml_segment_count",
+                    default=_pick(simulation_result, "ml_segment_count", default=0),
+                ),
+                0,
+            )
+        )
+
+        heuristic_segment_count = int(
+            _safe_float(
+                _pick(
+                    charge_need,
+                    "heuristic_segment_count",
+                    default=_pick(
+                        simulation_result,
+                        "heuristic_segment_count",
+                        default=0,
+                    ),
+                ),
+                0,
+            )
+        )
+
+        model_version = _pick(
+            charge_need,
+            "model_version",
+            default=_pick(simulation_result, "model_version", default=None),
+        )
+
+        return {
+            "used_ml": used_ml,
+            "ml_segment_count": ml_segment_count,
+            "heuristic_segment_count": heuristic_segment_count,
+            "model_version": model_version,
         }
 
     def _extract_final_soc(self, simulation_result: Dict[str, Any]) -> float:
@@ -264,17 +334,28 @@ class ChargingPlanner:
         feasible: bool,
         projected_arrival_soc_percent: float,
         total_trip_minutes: float,
+        used_ml: bool = False,
+        model_version: Optional[str] = None,
     ) -> str:
+        prediction_note = ""
+        if used_ml:
+            if model_version:
+                prediction_note = f" Tahmin kaynağı: ML ({model_version})."
+            else:
+                prediction_note = " Tahmin kaynağı: ML."
+
         if feasible:
             return (
                 f"{station_name} ile tek duraklı plan oluşturuldu. "
                 f"Tahmini varış SOC: %{projected_arrival_soc_percent:.1f}, "
                 f"toplam süre: {total_trip_minutes:.1f} dk."
+                f"{prediction_note}"
             )
 
         return (
             f"{station_name} seçilerek plan oluşturuldu ancak marj düşük görünüyor. "
             f"Tahmini varış SOC: %{projected_arrival_soc_percent:.1f}."
+            f"{prediction_note}"
         )
 
 
@@ -316,6 +397,10 @@ if __name__ == "__main__":
     simulation_result = {
         "initial_soc": 80,
         "total_energy_kwh": 54,
+        "used_ml": True,
+        "ml_segment_count": 3,
+        "heuristic_segment_count": 0,
+        "model_version": "lgbm_v1",
         "segments": [
             {"cumulative_distance_km": 100, "soc_after": 60},
             {"cumulative_distance_km": 200, "soc_after": 32},
@@ -327,6 +412,10 @@ if __name__ == "__main__":
         "needs_charging": True,
         "critical_distance_km": 210,
         "reserve_soc_percent": 10,
+        "used_ml": True,
+        "ml_segment_count": 3,
+        "heuristic_segment_count": 0,
+        "model_version": "lgbm_v1",
     }
 
     selector_result = {

@@ -131,3 +131,53 @@ def test_route_planner_skips_selector_when_charge_not_needed():
     assert result["charging_plan"]["needs_charging"] is False
     assert result["charging_plan"]["selected_station"] is None
     assert selector.called is False
+def test_route_planner_propagates_ml_summary():
+    class FakeRouteEnergySimulatorWithML:
+        def simulate(self, *, vehicle, route_context, initial_soc):
+            return {
+                "initial_soc": initial_soc,
+                "final_soc": 18,
+                "total_energy_kwh": 48,
+                "used_ml": True,
+                "ml_segment_count": 3,
+                "heuristic_segment_count": 0,
+                "model_version": "lgbm_v1",
+                "segments": [
+                    {"cumulative_distance_km": 100, "soc_after": 58},
+                    {"cumulative_distance_km": 200, "soc_after": 36},
+                    {"cumulative_distance_km": 300, "soc_after": 18},
+                ],
+            }
+
+    class FakeChargeNeedAnalyzerNoCharge:
+        def analyze(self, *, vehicle, route_context, simulation_result):
+            return {
+                "needs_charging": False,
+                "critical_distance_km": None,
+                "reserve_soc_percent": 10,
+            }
+
+    planner = RoutePlanner(
+        route_context_service=FakeRouteContextService(),
+        route_energy_simulator=FakeRouteEnergySimulatorWithML(),
+        charge_need_analyzer=FakeChargeNeedAnalyzerNoCharge(),
+        charging_stop_selector=FakeSelector(),
+    )
+
+    vehicle = {
+        "name": "Test EV",
+        "usable_battery_kwh": 60,
+    }
+
+    result = planner.plan(
+        start="Ankara",
+        end="Eskisehir",
+        vehicle=vehicle,
+        initial_soc=80,
+        strategy="balanced",
+    )
+
+    assert result["ml_summary"]["used_ml"] is True
+    assert result["ml_summary"]["ml_segment_count"] == 3
+    assert result["ml_summary"]["heuristic_segment_count"] == 0
+    assert result["ml_summary"]["model_version"] == "lgbm_v1"

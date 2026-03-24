@@ -93,3 +93,54 @@ def test_route_energy_simulation_flags_low_soc():
     )
 
     assert result.end_soc_pct < 20.0
+def test_route_energy_simulation_uses_ml_when_available():
+    class FakeModelService:
+        def predict_segment_energy(self, *, segment, vehicle, weather=None):
+            return {
+                "source": "ml",
+                "used_model": True,
+                "predicted_energy_kwh": 1.2,
+                "fallback_energy_kwh": 1.4,
+                "model_version": "lgbm_v1",
+            }
+
+    simulator = RouteEnergySimulator(
+        model_service=FakeModelService(),
+        use_ml_default=True,
+    )
+
+    vehicle = sample_vehicle()
+    route_context = sample_route_context()
+
+    result = simulator.simulate(
+        vehicle=vehicle,
+        route_context=route_context,
+        start_soc_pct=80.0,
+    )
+
+    assert result.used_ml is True
+    assert result.ml_segment_count == 3
+    assert result.heuristic_segment_count == 0
+    assert result.model_version == "lgbm_v1"
+    assert result.total_energy_kwh > 0
+
+
+def test_route_energy_simulation_falls_back_without_ml():
+    simulator = RouteEnergySimulator(
+        model_service=None,
+        use_ml_default=True,
+    )
+
+    vehicle = sample_vehicle()
+    route_context = sample_route_context()
+
+    result = simulator.simulate(
+        vehicle=vehicle,
+        route_context=route_context,
+        start_soc_pct=80.0,
+    )
+
+    assert result.used_ml is False
+    assert result.ml_segment_count == 0
+    assert result.heuristic_segment_count == 3
+    assert result.total_energy_kwh > 0

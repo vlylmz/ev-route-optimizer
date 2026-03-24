@@ -251,3 +251,73 @@ def test_falls_back_when_balanced_not_feasible():
     assert result["status"] == "ok"
     assert result["profiles"]["balanced"]["feasible"] is False
     assert result["recommended_profile"] == "fast"
+def test_profiles_propagate_ml_summary():
+    class FakeChargingPlannerWithML:
+        def build_plan(
+            self,
+            *,
+            vehicle,
+            route_context,
+            simulation_result,
+            charge_need,
+            selector_result,
+            strategy,
+        ):
+            base = {
+                "fast": 275.0,
+                "efficient": 282.0,
+                "balanced": 278.0,
+            }
+
+            return {
+                "status": "ok",
+                "strategy": strategy,
+                "needs_charging": True,
+                "feasible": True,
+                "recommended_stops": [{"name": "Any Station"}],
+                "summary": {
+                    "stop_count": 1,
+                    "charge_minutes": 10.0,
+                    "detour_minutes": 2.0,
+                    "total_trip_minutes": base[strategy],
+                    "total_energy_kwh": 56.0,
+                    "projected_arrival_soc_percent": 15.0,
+                },
+                "ml_summary": {
+                    "used_ml": True,
+                    "ml_segment_count": 3,
+                    "heuristic_segment_count": 0,
+                    "model_version": "lgbm_v1",
+                },
+            }
+
+    engine = RouteProfiles(
+        charging_stop_selector=FakeSelector(),
+        charging_planner=FakeChargingPlannerWithML(),
+    )
+
+    vehicle, route_context, simulation_result, charge_need = build_common_inputs()
+    simulation_result["used_ml"] = True
+    simulation_result["ml_segment_count"] = 3
+    simulation_result["heuristic_segment_count"] = 0
+    simulation_result["model_version"] = "lgbm_v1"
+
+    result = engine.generate_profiles(
+        vehicle=vehicle,
+        route_context=route_context,
+        simulation_result=simulation_result,
+        charge_need=charge_need,
+    )
+
+    assert result["any_profile_used_ml"] is True
+    assert set(result["profiles_using_ml"]) == {"fast", "efficient", "balanced"}
+
+    assert result["profiles"]["fast"]["ml_summary"]["used_ml"] is True
+    assert result["profiles"]["fast"]["ml_summary"]["ml_segment_count"] == 3
+    assert result["profiles"]["fast"]["ml_summary"]["model_version"] == "lgbm_v1"
+
+    fast_card = next(card for card in result["profile_cards"] if card["key"] == "fast")
+    assert fast_card["used_ml"] is True
+    assert fast_card["ml_segment_count"] == 3
+    assert fast_card["heuristic_segment_count"] == 0
+    assert fast_card["model_version"] == "lgbm_v1"

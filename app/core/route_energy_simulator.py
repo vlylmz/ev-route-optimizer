@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from app.core.energy_model import Vehicle, estimate_segment_energy
 
@@ -20,6 +20,9 @@ class RouteEnergySegmentResult:
     below_reserve: bool
     segment_start: tuple[float, float]
     segment_end: tuple[float, float]
+    prediction_source: str = "formula"
+    used_ml: bool = False
+    model_version: Optional[str] = None
 
 
 @dataclass
@@ -34,14 +37,28 @@ class RouteEnergySimulationResult:
     below_reserve: bool
     segment_count: int
     segments: List[RouteEnergySegmentResult]
+    used_ml: bool = False
+    ml_segment_count: int = 0
+    heuristic_segment_count: int = 0
+    model_version: Optional[str] = None
 
 
 class RouteEnergySimulator:
+    def __init__(
+        self,
+        *,
+        model_service: Optional[Any] = None,
+        use_ml_default: bool = False,
+    ) -> None:
+        self.model_service = model_service
+        self.use_ml_default = use_ml_default
+
     def simulate(
         self,
         vehicle: Vehicle,
         route_context: Dict[str, Any],
         start_soc_pct: float,
+        use_ml: Optional[bool] = None,
     ) -> RouteEnergySimulationResult:
         slope_segments = route_context["elevation"]["slope_segments"]
         weather = route_context["weather"]
@@ -63,47 +80,54 @@ class RouteEnergySimulator:
         if route_distance_km <= 0:
             raise ValueError("Route distance 0 veya negatif olamaz.")
 
-        avg_speed_kmh = route_distance_km / (duration_min / 60.0) if duration_min > 0 else 50.0
+        avg_speed_kmh = (
+            route_distance_km / (duration_min / 60.0)
+            if duration_min > 0
+            else 50.0
+        )
+
+        use_ml = self.use_ml_default if use_ml is None else use_ml
 
         results: List[RouteEnergySegmentResult] = []
+        ml_segment_count = 0
+        heuristic_segment_count = 0
+        model_versions: set[str] = set()
 
         for i, seg in enumerate(slope_segments, start=1):
             distance_km = float(seg["distance_km"])
             grade_pct = float(seg["grade_pct"])
 
-            result = estimate_segment_energy(
+            segment_result = self._simulate_segment(
                 vehicle=vehicle,
                 distance_km=distance_km,
                 speed_kmh=avg_speed_kmh,
                 temp_c=avg_temp_c,
                 grade_pct=grade_pct,
                 start_soc_pct=current_soc,
+                segment_no=i,
+                segment_start=tuple(seg["start"]),
+                segment_end=tuple(seg["end"]),
+                use_ml=use_ml,
             )
 
-            total_distance_km += result.distance_km
-            total_energy_kwh += result.energy_used_kwh
-            current_soc = result.end_soc_pct
+            total_distance_km += segment_result.distance_km
+            total_energy_kwh += segment_result.energy_used_kwh
+            current_soc = segment_result.end_soc_pct
 
-            results.append(
-                RouteEnergySegmentResult(
-                    segment_no=i,
-                    distance_km=result.distance_km,
-                    speed_kmh=result.speed_kmh,
-                    grade_pct=result.grade_pct,
-                    temp_c=result.temp_c,
-                    start_soc_pct=result.start_soc_pct,
-                    end_soc_pct=result.end_soc_pct,
-                    energy_used_kwh=result.energy_used_kwh,
-                    consumption_wh_km=result.consumption_wh_km,
-                    below_reserve=result.below_reserve,
-                    segment_start=tuple(seg["start"]),
-                    segment_end=tuple(seg["end"]),
-                )
-            )
+            if segment_result.used_ml:
+                ml_segment_count += 1
+                if segment_result.model_version:
+                    model_versions.add(segment_result.model_version)
+            else:
+                heuristic_segment_count += 1
+
+            results.append(segment_result)
 
         avg_consumption = 0.0
         if total_distance_km > 0:
             avg_consumption = (total_energy_kwh * 1000.0) / total_distance_km
+
+        reserve_soc_pct = self._reserve_soc_pct(vehicle)
 
         return RouteEnergySimulationResult(
             vehicle_id=vehicle.id,
@@ -113,10 +137,186 @@ class RouteEnergySimulator:
             average_consumption_wh_km=round(avg_consumption, 2),
             start_soc_pct=round(start_soc_pct, 2),
             end_soc_pct=round(current_soc, 2),
-            below_reserve=current_soc < vehicle.routing_reserve_soc_pct,
+            below_reserve=current_soc < reserve_soc_pct,
             segment_count=len(results),
             segments=results,
+            used_ml=ml_segment_count > 0,
+            ml_segment_count=ml_segment_count,
+            heuristic_segment_count=heuristic_segment_count,
+            model_version=sorted(model_versions)[0] if model_versions else None,
         )
+
+    def _simulate_segment(
+        self,
+        *,
+        vehicle: Vehicle,
+        distance_km: float,
+        speed_kmh: float,
+        temp_c: float,
+        grade_pct: float,
+        start_soc_pct: float,
+        segment_no: int,
+        segment_start: tuple[float, float],
+        segment_end: tuple[float, float],
+        use_ml: bool,
+    ) -> RouteEnergySegmentResult:
+        reserve_soc_pct = self._reserve_soc_pct(vehicle)
+
+        if use_ml and self.model_service is not None:
+            ml_prediction = self._predict_with_ml(
+                vehicle=vehicle,
+                distance_km=distance_km,
+                speed_kmh=speed_kmh,
+                temp_c=temp_c,
+                grade_pct=grade_pct,
+                start_soc_pct=start_soc_pct,
+            )
+
+            if ml_prediction is not None:
+                energy_used_kwh = ml_prediction["predicted_energy_kwh"]
+                end_soc_pct = self._calc_end_soc(
+                    start_soc_pct=start_soc_pct,
+                    energy_used_kwh=energy_used_kwh,
+                    usable_battery_kwh=vehicle.usable_battery_kwh,
+                )
+                consumption_wh_km = (
+                    (energy_used_kwh * 1000.0) / distance_km
+                    if distance_km > 0
+                    else 0.0
+                )
+
+                return RouteEnergySegmentResult(
+                    segment_no=segment_no,
+                    distance_km=round(distance_km, 3),
+                    speed_kmh=round(speed_kmh, 2),
+                    grade_pct=round(grade_pct, 3),
+                    temp_c=round(temp_c, 2),
+                    start_soc_pct=round(start_soc_pct, 2),
+                    end_soc_pct=round(end_soc_pct, 2),
+                    energy_used_kwh=round(energy_used_kwh, 4),
+                    consumption_wh_km=round(consumption_wh_km, 2),
+                    below_reserve=end_soc_pct < reserve_soc_pct,
+                    segment_start=segment_start,
+                    segment_end=segment_end,
+                    prediction_source=ml_prediction["source"],
+                    used_ml=True,
+                    model_version=ml_prediction.get("model_version"),
+                )
+
+        result = estimate_segment_energy(
+            vehicle=vehicle,
+            distance_km=distance_km,
+            speed_kmh=speed_kmh,
+            temp_c=temp_c,
+            grade_pct=grade_pct,
+            start_soc_pct=start_soc_pct,
+        )
+
+        return RouteEnergySegmentResult(
+            segment_no=segment_no,
+            distance_km=result.distance_km,
+            speed_kmh=result.speed_kmh,
+            grade_pct=result.grade_pct,
+            temp_c=result.temp_c,
+            start_soc_pct=result.start_soc_pct,
+            end_soc_pct=result.end_soc_pct,
+            energy_used_kwh=result.energy_used_kwh,
+            consumption_wh_km=result.consumption_wh_km,
+            below_reserve=result.below_reserve,
+            segment_start=segment_start,
+            segment_end=segment_end,
+            prediction_source="formula",
+            used_ml=False,
+            model_version=None,
+        )
+
+    def _predict_with_ml(
+        self,
+        *,
+        vehicle: Vehicle,
+        distance_km: float,
+        speed_kmh: float,
+        temp_c: float,
+        grade_pct: float,
+        start_soc_pct: float,
+    ) -> Optional[Dict[str, Any]]:
+        try:
+            elevation_gain_m, elevation_loss_m = self._grade_to_elevation(
+                distance_km=distance_km,
+                grade_pct=grade_pct,
+            )
+
+            segment_payload = {
+                "segment_length_km": distance_km,
+                "avg_speed_kmh": speed_kmh,
+                "elevation_gain_m": elevation_gain_m,
+                "elevation_loss_m": elevation_loss_m,
+                "temperature_c": temp_c,
+                "soc_start_percent": start_soc_pct,
+                "soc_end_percent": max(start_soc_pct - 5.0, 0.0),
+            }
+
+            prediction = self.model_service.predict_segment_energy(
+                segment=segment_payload,
+                vehicle={
+                    "id": vehicle.id,
+                    "vehicle_id": vehicle.id,
+                    "name": vehicle.full_name,
+                    "model": vehicle.model,
+                    "usable_battery_kwh": vehicle.usable_battery_kwh,
+                    "ideal_consumption_wh_km": vehicle.ideal_consumption_wh_km,
+                    "temp_penalty_factor": getattr(vehicle, "temp_penalty_factor", 0.012),
+                },
+                weather={"temperature_c": temp_c},
+            )
+
+            if not prediction:
+                return None
+
+            predicted_energy_kwh = float(prediction.get("predicted_energy_kwh", 0.0))
+            if predicted_energy_kwh <= 0:
+                return None
+
+            return {
+                "source": str(prediction.get("source", "ml")),
+                "predicted_energy_kwh": predicted_energy_kwh,
+                "model_version": prediction.get("model_version"),
+            }
+        except Exception:
+            return None
+
+    def _grade_to_elevation(
+        self,
+        *,
+        distance_km: float,
+        grade_pct: float,
+    ) -> tuple[float, float]:
+        horizontal_distance_m = distance_km * 1000.0
+        elevation_delta_m = horizontal_distance_m * (grade_pct / 100.0)
+
+        if elevation_delta_m >= 0:
+            return elevation_delta_m, 0.0
+        return 0.0, abs(elevation_delta_m)
+
+    def _calc_end_soc(
+        self,
+        *,
+        start_soc_pct: float,
+        energy_used_kwh: float,
+        usable_battery_kwh: float,
+    ) -> float:
+        if usable_battery_kwh <= 0:
+            return start_soc_pct
+
+        soc_drop_pct = (energy_used_kwh / usable_battery_kwh) * 100.0
+        return max(start_soc_pct - soc_drop_pct, 0.0)
+
+    def _reserve_soc_pct(self, vehicle: Vehicle) -> float:
+        if hasattr(vehicle, "routing_reserve_soc_pct"):
+            return float(vehicle.routing_reserve_soc_pct)
+        if hasattr(vehicle, "soc_min_pct"):
+            return float(vehicle.soc_min_pct)
+        return 10.0
 
     def to_dict(self, result: RouteEnergySimulationResult) -> Dict[str, Any]:
         return {
@@ -129,6 +329,10 @@ class RouteEnergySimulator:
             "end_soc_pct": result.end_soc_pct,
             "below_reserve": result.below_reserve,
             "segment_count": result.segment_count,
+            "used_ml": result.used_ml,
+            "ml_segment_count": result.ml_segment_count,
+            "heuristic_segment_count": result.heuristic_segment_count,
+            "model_version": result.model_version,
             "segments": [
                 {
                     "segment_no": s.segment_no,
@@ -143,6 +347,9 @@ class RouteEnergySimulator:
                     "below_reserve": s.below_reserve,
                     "segment_start": s.segment_start,
                     "segment_end": s.segment_end,
+                    "prediction_source": s.prediction_source,
+                    "used_ml": s.used_ml,
+                    "model_version": s.model_version,
                 }
                 for s in result.segments
             ],
@@ -173,8 +380,8 @@ if __name__ == "__main__":
 
     route_context_service = RouteContextService()
     route_context = route_context_service.build_route_context(
-        start=(39.9208, 32.8541),   # Ankara
-        end=(39.7767, 30.5206),     # Eskişehir
+        start=(39.9208, 32.8541),
+        end=(39.7767, 30.5206),
         allow_station_fallback=True,
     )
 
@@ -194,3 +401,5 @@ if __name__ == "__main__":
     print("End SOC (%):", simulation.end_soc_pct)
     print("Below reserve:", simulation.below_reserve)
     print("Segment count:", simulation.segment_count)
+    print("Used ML:", simulation.used_ml)
+    print("ML segment count:", simulation.ml_segment_count)
