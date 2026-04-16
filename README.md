@@ -2,6 +2,22 @@
 
 Elektrikli araçlar için rota bazlı enerji tüketimi, SOC simülasyonu ve şarj planlama sistemi.
 
+## Durum
+
+| Faz | Başlık                             | Durum |
+| --- | ---------------------------------- | ----- |
+| 1   | Veri temeli + formül bazlı enerji  | ✅    |
+| 2   | Dış API entegrasyonları            | ✅    |
+| 3   | SOC simülasyonu + şarj planlaması  | ✅    |
+| 4   | ML iyileştirme katmanı (LightGBM)  | ✅    |
+| 5   | FastAPI MVC backend                | ✅    |
+| 6   | React + TypeScript frontend        | ✅    |
+| 7   | Demo senaryoları + rapor + deploy  | ⏳    |
+
+**Uçtan uca çalışan akış:** Vite dev (`:5173`) → `/api` proxy → FastAPI (`:8000`) → Core simülatör + LightGBM + Open Charge Map fallback → Harita + 3 profil kartı.
+
+**Test kapsamı:** `pytest` 55/55 ✅ · `vitest` 12/12 ✅ · `tsc --noEmit` temiz ✅
+
 ## Çıktılar — Faz 1 → Faz 6
 
 ### Faz 1 — Veri temeli ve enerji modeli
@@ -174,4 +190,7 @@ ev-route-optimizer/
 
 ## Sonraki adım — Faz 7
 
-5 demo senaryosu (kısa/orta/uzun/soğuk hava/düşük SOC), teknik rapor PDF, canlı sunum akışı ve AWS deployment planı.
+- **Demo senaryoları** (5 adet): şehir içi kısa, bölgesel orta, şehirlerarası uzun, soğuk hava ağırlıklı, düşük SOC başlangıçlı.
+- **Teknik rapor** (PDF): mimari, enerji modeli formülleri, ML metrikleri (baseline vs LightGBM), örnek rota çıktıları.
+- **Sunum akışı**: 10-12 slayt + canlı demo senaryosu.
+- **AWS deployment planı**: backend (ECS Fargate ya da App Runner) + frontend (S3/CloudFront), çevresel değişkenler (OCM key, CORS origin), healthcheck/logging önerileri.
