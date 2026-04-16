@@ -1,0 +1,101 @@
+{
+  "info": {
+    "_postman_id": "f3a1b3f6-0000-4000-8000-ev-route-optimizer",
+    "name": "EV Route Optimizer",
+    "description": "Faz 5 MVC API — Health, Vehicles, Route, Stations, Estimate Consumption, Optimize (3 profile).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {"key": "base_url", "value": "http://127.0.0.1:8000", "type": "string"},
+    {"key": "vehicle_id", "value": "tesla_model_y_rwd", "type": "string"}
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {"raw": "{{base_url}}/health", "host": ["{{base_url}}"], "path": ["health"]}
+      }
+    },
+    {
+      "name": "Vehicles — list",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {"raw": "{{base_url}}/vehicles", "host": ["{{base_url}}"], "path": ["vehicles"]}
+      }
+    },
+    {
+      "name": "Vehicles — detail",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/vehicles/{{vehicle_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["vehicles", "{{vehicle_id}}"]
+        }
+      }
+    },
+    {
+      "name": "Stations — nearby",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/stations?lat=39.92&lon=32.85&distance_km=10&max_results=20&allow_fallback=true",
+          "host": ["{{base_url}}"],
+          "path": ["stations"],
+          "query": [
+            {"key": "lat", "value": "39.92"},
+            {"key": "lon", "value": "32.85"},
+            {"key": "distance_km", "value": "10"},
+            {"key": "max_results", "value": "20"},
+            {"key": "allow_fallback", "value": "true"}
+          ]
+        }
+      }
+    },
+    {
+      "name": "Route — context",
+      "request": {
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"start\": { \"lat\": 39.92, \"lon\": 32.85 },\n  \"end\":   { \"lat\": 41.01, \"lon\": 28.97 },\n  \"elevation_min_spacing_km\": 5.0,\n  \"elevation_max_points\": 60,\n  \"weather_sample_limit\": 5,\n  \"station_query_every_n_points\": 4,\n  \"station_distance_km\": 5.0,\n  \"station_max_results_per_query\": 10,\n  \"allow_station_fallback\": true\n}"
+        },
+        "url": {"raw": "{{base_url}}/route", "host": ["{{base_url}}"], "path": ["route"]}
+      }
+    },
+    {
+      "name": "Estimate — segment consumption",
+      "request": {
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"vehicle_id\": \"{{vehicle_id}}\",\n  \"segment\": {\n    \"segment_length_km\": 80.0,\n    \"avg_speed_kmh\": 95.0,\n    \"elevation_gain_m\": 50.0,\n    \"elevation_loss_m\": 40.0,\n    \"temperature_c\": 18.0,\n    \"soc_start_percent\": 80.0\n  },\n  \"weather\": { \"temperature_c\": 18.0 }\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/estimate-consumption",
+          "host": ["{{base_url}}"],
+          "path": ["estimate-consumption"]
+        }
+      }
+    },
+    {
+      "name": "Optimize — 3 profiles",
+      "request": {
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"vehicle_id\": \"{{vehicle_id}}\",\n  \"start\": { \"lat\": 39.92, \"lon\": 32.85 },\n  \"end\":   { \"lat\": 41.01, \"lon\": 28.97 },\n  \"initial_soc_pct\": 80.0,\n  \"strategies\": [\"fast\", \"efficient\", \"balanced\"],\n  \"use_ml\": false,\n  \"elevation_min_spacing_km\": 5.0,\n  \"elevation_max_points\": 60,\n  \"station_distance_km\": 5.0\n}"
+        },
+        "url": {"raw": "{{base_url}}/optimize", "host": ["{{base_url}}"], "path": ["optimize"]}
+      }
+    }
+  ]
+}

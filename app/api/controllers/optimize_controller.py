@@ -1,0 +1,211 @@
+"""
+Uçtan uca rota planlama endpoint'i:
+
+route_context -> simulate -> charge_need -> route_profiles
+
+Tek istekte "fast", "efficient", "balanced" profillerini dönmek
+için core servisleri orkestre eder.
+"""
+
+from __future__ import annotations
+
+from dataclasses import asdict, is_dataclass
+from typing import Any, Dict, List
+
+from fastapi import APIRouter, Depends, HTTPException, status
+
+from app.api.dependencies import (
+    get_charge_need_analyzer,
+    get_route_context_service,
+    get_route_energy_simulator,
+    get_route_profiles,
+    get_vehicles_lookup,
+)
+from app.api.schemas import (
+    OptimizeRequest,
+    OptimizeResponse,
+    ProfileCard,
+)
+from app.core.charge_need_analyzer import ChargeNeedAnalyzer
+from app.core.energy_model import Vehicle
+from app.core.route_energy_simulator import RouteEnergySimulator
+from app.core.route_profiles import RouteProfiles
+from app.services.route_context_service import (
+    RouteContextService,
+    RouteContextServiceError,
+)
+
+router = APIRouter(tags=["optimize"])
+
+
+def _dataclass_to_dict(obj: Any) -> Any:
+    if is_dataclass(obj):
+        return asdict(obj)
+    if isinstance(obj, list):
+        return [_dataclass_to_dict(item) for item in obj]
+    if isinstance(obj, dict):
+        return {k: _dataclass_to_dict(v) for k, v in obj.items()}
+    return obj
+
+
+def _vehicle_to_dict(vehicle: Vehicle) -> Dict[str, Any]:
+    return {
+        "id": vehicle.id,
+        "vehicle_id": vehicle.id,
+        "name": vehicle.full_name,
+        "usable_battery_kwh": vehicle.usable_battery_kwh,
+        "ideal_consumption_wh_km": vehicle.ideal_consumption_wh_km,
+        "max_dc_charge_kw": vehicle.max_dc_charge_kw,
+        "max_dc_charge_power_kw": vehicle.max_dc_charge_kw,
+        "temp_penalty_factor": vehicle.temp_penalty_factor,
+    }
+
+
+def _build_profile_cards(profile_result: Dict[str, Any]) -> List[ProfileCard]:
+    cards: List[ProfileCard] = []
+    raw_cards = profile_result.get("profile_cards") or []
+    profiles = profile_result.get("profiles") or {}
+
+    for card in raw_cards:
+        key = card.get("key")
+        profile = profiles.get(key, {})
+        summary = profile.get("summary") or {}
+        ml_summary = profile.get("ml_summary") or {}
+
+        cards.append(
+            ProfileCard(
+                key=key,
+                label=card.get("label") or key,
+                feasible=bool(card.get("feasible", False)),
+                total_energy_kwh=card.get("total_energy_kwh"),
+                total_trip_minutes=card.get("total_trip_minutes"),
+                charging_minutes=card.get("charge_minutes"),
+                stop_count=card.get("stop_count"),
+                final_soc_pct=card.get("arrival_soc_percent"),
+                used_ml=bool(ml_summary.get("used_ml", card.get("used_ml", False))),
+                model_version=ml_summary.get("model_version"),
+                raw={
+                    "summary": summary,
+                    "ml_summary": ml_summary,
+                    "status": profile.get("status"),
+                },
+            )
+        )
+    return cards
+
+
+@router.post(
+    "/optimize",
+    response_model=OptimizeResponse,
+    responses={
+        404: {"description": "Araç bulunamadı"},
+        502: {"description": "Dış servis hatası"},
+    },
+    summary="Uçtan uca rota planı: 3 profil (fast/efficient/balanced)",
+)
+def optimize_route(
+    req: OptimizeRequest,
+    vehicles: Dict[str, Vehicle] = Depends(get_vehicles_lookup),
+    route_context_service: RouteContextService = Depends(get_route_context_service),
+    simulator: RouteEnergySimulator = Depends(get_route_energy_simulator),
+    analyzer: ChargeNeedAnalyzer = Depends(get_charge_need_analyzer),
+    profiles_engine: RouteProfiles = Depends(get_route_profiles),
+) -> OptimizeResponse:
+    vehicle = vehicles.get(req.vehicle_id)
+    if vehicle is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Vehicle '{req.vehicle_id}' not found",
+        )
+
+    # 1) Rota bağlamı
+    try:
+        route_context = route_context_service.build_route_context(
+            start=req.start.as_tuple(),
+            end=req.end.as_tuple(),
+            elevation_min_spacing_km=req.elevation_min_spacing_km,
+            elevation_max_points=req.elevation_max_points,
+            station_distance_km=req.station_distance_km,
+        )
+    except RouteContextServiceError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Route context build failed: {exc}",
+        ) from exc
+
+    # 2) Enerji simülasyonu
+    try:
+        simulation = simulator.simulate(
+            vehicle=vehicle,
+            route_context=route_context,
+            start_soc_pct=req.initial_soc_pct,
+            use_ml=req.use_ml,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Simulation failed: {exc}",
+        ) from exc
+
+    reserve_soc_pct = float(vehicle.soc_min_pct)
+
+    # 3) Şarj ihtiyacı analizi
+    try:
+        charge_need = analyzer.analyze(
+            simulation=simulation,
+            usable_battery_kwh=vehicle.usable_battery_kwh,
+            reserve_soc_pct=reserve_soc_pct,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Charge need analysis failed: {exc}",
+        ) from exc
+
+    simulation_dict = _dataclass_to_dict(simulation)
+    charge_need_dict = _dataclass_to_dict(charge_need)
+    vehicle_dict = _vehicle_to_dict(vehicle)
+
+    # 4) Profiller
+    try:
+        profile_result = profiles_engine.generate_profiles(
+            vehicle=vehicle_dict,
+            route_context=route_context,
+            simulation_result=simulation_dict,
+            charge_need=charge_need_dict,
+            strategies=req.strategies,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Profile generation failed: {exc}",
+        ) from exc
+
+    cards = _build_profile_cards(profile_result)
+
+    return OptimizeResponse(
+        status=str(profile_result.get("status", "unknown")),
+        vehicle_id=vehicle.id,
+        vehicle_name=vehicle.full_name,
+        initial_soc_pct=float(simulation.start_soc_pct),
+        final_soc_pct=float(simulation.end_soc_pct),
+        total_distance_km=float(simulation.total_distance_km),
+        total_energy_kwh=float(simulation.total_energy_kwh),
+        used_ml=bool(simulation.used_ml),
+        ml_segment_count=int(simulation.ml_segment_count),
+        heuristic_segment_count=int(simulation.heuristic_segment_count),
+        model_version=simulation.model_version,
+        recommended_profile=profile_result.get("recommended_profile"),
+        profiles=cards,
+        raw_optimization={
+            "best_by_time": profile_result.get("best_by_time"),
+            "best_by_energy": profile_result.get("best_by_energy"),
+            "any_profile_used_ml": profile_result.get("any_profile_used_ml", False),
+            "message": profile_result.get("message"),
+        },
+    )
