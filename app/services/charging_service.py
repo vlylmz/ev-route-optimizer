@@ -304,8 +304,11 @@ class OpenChargeMapService:
         lat, lon = coord
 
         if not self.api_key:
+            if allow_fallback:
+                fallback_stations = self._load_fallback_stations()
+                return fallback_stations if fallback_stations else []
             raise ChargingServiceError(
-                "OCM_API_KEY bulunamadı. Önce terminalde export et."
+                "OCM_API_KEY bulunamadi. Once terminalde export et."
             )
 
         if allow_fallback and not self.live_api_available:
@@ -369,7 +372,7 @@ class OpenChargeMapService:
                 raise ChargingServiceError("Charging service failed.") from exc
 
             self._debug_print(
-                f"WARNING: Live OCM failed, fallback kullanılacak. Sebep: {type(exc).__name__}"
+                f"WARNING: Live OCM failed, using fallback. Reason: {type(exc).__name__}"
             )
 
             fallback_stations = self._load_fallback_stations()

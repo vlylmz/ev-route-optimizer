@@ -2,7 +2,7 @@
 
 Elektrikli araçlar için rota bazlı enerji tüketimi, SOC simülasyonu ve şarj planlama sistemi.
 
-## Çıktılar — Faz 1 → Faz 5
+## Çıktılar — Faz 1 → Faz 6
 
 ### Faz 1 — Veri temeli ve enerji modeli
 - Araç veritabanı: [`app/data/vehicles.json`](app/data/vehicles.json)
@@ -51,6 +51,21 @@ Elektrikli araçlar için rota bazlı enerji tüketimi, SOC simülasyonu ve şar
 - Uygulama girişi: [`app/api/main.py`](app/api/main.py) — `lifespan` içinde `ModelService`, `RouteContextService`, `RouteEnergySimulator`, `ChargeNeedAnalyzer`, `ChargingStopSelector`, `ChargingPlanner`, `RouteProfiles`, `OpenChargeMapService` singleton olarak kurulur.
 - E2E testler (dependency_overrides ile dış servis mock'lu): [`tests/test_api.py`](tests/test_api.py)
 - Postman koleksiyonu: [`postman/ev_route_optimizer.postman_collection.json`](postman/ev_route_optimizer.postman_collection.json)
+- CORS middleware — Vite/CRA dev sunucuları için açık (`EV_CORS_ORIGINS` ile override edilebilir)
+
+### Faz 6 — React + TypeScript Frontend
+- Stack: **Vite + React 19 + TypeScript**, **Tailwind CSS v4**, **TanStack Query v5**, **react-leaflet**, **axios + zod**
+- Dizin: [`frontend/`](frontend)
+  - [`frontend/src/App.tsx`](frontend/src/App.tsx) — ana layout + TanStack Query orkestrasyonu
+  - [`frontend/src/components/RouteForm.tsx`](frontend/src/components/RouteForm.tsx) — araç seçimi, koordinat, SOC, strateji
+  - [`frontend/src/components/MapView.tsx`](frontend/src/components/MapView.tsx) — Leaflet: rota polyline + şarj istasyonu markerleri
+  - [`frontend/src/components/ProfileCard.tsx`](frontend/src/components/ProfileCard.tsx) — Hızlı / Verimli / Dengeli profil kartı
+  - [`frontend/src/components/ReportPanel.tsx`](frontend/src/components/ReportPanel.tsx) — sonuç özeti + 3 kart
+  - [`frontend/src/services/schemas.ts`](frontend/src/services/schemas.ts) — zod şemalar (FastAPI ile birebir uyumlu)
+  - [`frontend/src/services/api.ts`](frontend/src/services/api.ts) — axios istemci + runtime validation
+  - [`frontend/src/hooks/`](frontend/src/hooks) — `useVehicles`, `useOptimize`, `useRoute`
+- Vitest + @testing-library ile 12 komponent/schema testi
+- Vite dev-proxy: frontend `localhost:5173` → `/api` → backend `127.0.0.1:8000`
 
 ## Kurulum
 
@@ -107,7 +122,24 @@ curl -X POST http://127.0.0.1:8000/optimize \
 Ortam değişkenleri:
 - `EV_VEHICLES_PATH` — araç veritabanı yolu (varsayılan `app/data/vehicles.json`)
 - `EV_MODEL_PATH` — ML artefaktı (varsayılan `ml/models/lgbm_v1.joblib`)
+- `EV_CORS_ORIGINS` — virgüllü origin listesi (varsayılan: localhost:5173, localhost:3000)
 - `OCM_API_KEY` — Open Charge Map API anahtarı (isteğe bağlı)
+
+### Frontend çalıştırma (Faz 6)
+
+```bash
+cd frontend
+npm install
+npm run dev            # http://localhost:5173 — backend zaten 8000'de koşmalı
+
+# Diğer komutlar
+npm test               # vitest
+npm run typecheck      # tsc -b --noEmit
+npm run build          # prod build -> frontend/dist
+```
+
+Frontend için env:
+- `VITE_API_BASE_URL` — üretimde backend URL'i (default: `/api`, dev'de Vite proxy ile 8000'e yönlenir).
 
 ## Proje yapısı
 
@@ -118,6 +150,13 @@ ev-route-optimizer/
 │   ├── core/          # Enerji modeli, simülatör, planlayıcı, profiller
 │   ├── data/          # vehicles.json, synthetic_drive_data.csv
 │   └── services/      # OSRM / Elevation / Weather / OCM istemcileri
+├── frontend/          # Vite + React + TS UI (Faz 6)
+│   ├── src/
+│   │   ├── components/
+│   │   ├── hooks/
+│   │   └── services/
+│   ├── package.json
+│   └── vite.config.ts
 ├── ml/
 │   ├── train_model.py
 │   ├── evaluate.py
@@ -133,6 +172,6 @@ ev-route-optimizer/
 └── README.md
 ```
 
-## Sonraki adım — Faz 6
+## Sonraki adım — Faz 7
 
-React + TypeScript frontend, Leaflet harita katmanı, profil karşılaştırma UI'ı ve canlı SOC grafiği.
+5 demo senaryosu (kısa/orta/uzun/soğuk hava/düşük SOC), teknik rapor PDF, canlı sunum akışı ve AWS deployment planı.

@@ -10,3 +10,10 @@ ml/reports/
 
 .venv/
 .ipynb_checkpoints/
+
+# Frontend
+node_modules/
+frontend/dist/
+frontend/node_modules/
+frontend/.vite/
+.claude_node_env.sh

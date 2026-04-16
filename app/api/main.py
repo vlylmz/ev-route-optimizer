@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import AsyncIterator, Dict
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.controllers import (
     estimate_router,
@@ -98,6 +99,23 @@ def create_app() -> FastAPI:
             "rota planlaması — FastAPI MVC."
         ),
         lifespan=lifespan,
+    )
+
+    # CORS — frontend dev sunucusu için (Vite: 5173, CRA: 3000)
+    cors_origins_env = os.getenv("EV_CORS_ORIGINS", "")
+    default_origins = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
+    origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()] or default_origins
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
     @app.get("/health", response_model=HealthResponse, tags=["system"])
