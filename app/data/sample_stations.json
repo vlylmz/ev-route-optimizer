@@ -4,16 +4,9 @@
     "UUID": "sample-ocm-001",
     "UsageCost": "Ücretli",
     "NumberOfPoints": 2,
-    "StatusType": {
-      "Title": "Operational",
-      "IsOperational": true
-    },
-    "OperatorInfo": {
-      "Title": "ZES"
-    },
-    "UsageType": {
-      "Title": "Public"
-    },
+    "StatusType": { "Title": "Operational", "IsOperational": true },
+    "OperatorInfo": { "Title": "ZES" },
+    "UsageType": { "Title": "Public" },
     "AddressInfo": {
       "Title": "Ankara Armada AVM DC Station",
       "AddressLine1": "Eskişehir Yolu No:6",
@@ -25,38 +18,8 @@
       "Distance": 2.4
     },
     "Connections": [
-      {
-        "PowerKW": 120,
-        "Quantity": 1,
-        "ConnectionType": {
-          "Title": "CCS"
-        },
-        "CurrentType": {
-          "Title": "DC"
-        },
-        "Level": {
-          "IsFastChargeCapable": true
-        },
-        "StatusType": {
-          "Title": "Operational"
-        }
-      },
-      {
-        "PowerKW": 22,
-        "Quantity": 1,
-        "ConnectionType": {
-          "Title": "Type 2"
-        },
-        "CurrentType": {
-          "Title": "AC"
-        },
-        "Level": {
-          "IsFastChargeCapable": false
-        },
-        "StatusType": {
-          "Title": "Operational"
-        }
-      }
+      { "PowerKW": 120, "Quantity": 1, "ConnectionType": { "Title": "CCS" }, "CurrentType": { "Title": "DC" }, "Level": { "IsFastChargeCapable": true }, "StatusType": { "Title": "Operational" } },
+      { "PowerKW": 22, "Quantity": 1, "ConnectionType": { "Title": "Type 2" }, "CurrentType": { "Title": "AC" }, "Level": { "IsFastChargeCapable": false }, "StatusType": { "Title": "Operational" } }
     ]
   },
   {
@@ -64,16 +27,9 @@
     "UUID": "sample-ocm-002",
     "UsageCost": "Ücretli",
     "NumberOfPoints": 3,
-    "StatusType": {
-      "Title": "Operational",
-      "IsOperational": true
-    },
-    "OperatorInfo": {
-      "Title": "Eşarj"
-    },
-    "UsageType": {
-      "Title": "Public"
-    },
+    "StatusType": { "Title": "Operational", "IsOperational": true },
+    "OperatorInfo": { "Title": "Eşarj" },
+    "UsageType": { "Title": "Public" },
     "AddressInfo": {
       "Title": "Ankara Bilkent Station",
       "AddressLine1": "Bilkent Center",
@@ -85,38 +41,8 @@
       "Distance": 7.1
     },
     "Connections": [
-      {
-        "PowerKW": 180,
-        "Quantity": 2,
-        "ConnectionType": {
-          "Title": "CCS"
-        },
-        "CurrentType": {
-          "Title": "DC"
-        },
-        "Level": {
-          "IsFastChargeCapable": true
-        },
-        "StatusType": {
-          "Title": "Operational"
-        }
-      },
-      {
-        "PowerKW": 22,
-        "Quantity": 1,
-        "ConnectionType": {
-          "Title": "Type 2"
-        },
-        "CurrentType": {
-          "Title": "AC"
-        },
-        "Level": {
-          "IsFastChargeCapable": false
-        },
-        "StatusType": {
-          "Title": "Operational"
-        }
-      }
+      { "PowerKW": 180, "Quantity": 2, "ConnectionType": { "Title": "CCS" }, "CurrentType": { "Title": "DC" }, "Level": { "IsFastChargeCapable": true }, "StatusType": { "Title": "Operational" } },
+      { "PowerKW": 22, "Quantity": 1, "ConnectionType": { "Title": "Type 2" }, "CurrentType": { "Title": "AC" }, "Level": { "IsFastChargeCapable": false }, "StatusType": { "Title": "Operational" } }
     ]
   },
   {
@@ -124,19 +50,12 @@
     "UUID": "sample-ocm-003",
     "UsageCost": "Ücretli",
     "NumberOfPoints": 2,
-    "StatusType": {
-      "Title": "Operational",
-      "IsOperational": true
-    },
-    "OperatorInfo": {
-      "Title": "Trugo"
-    },
-    "UsageType": {
-      "Title": "Public"
-    },
+    "StatusType": { "Title": "Operational", "IsOperational": true },
+    "OperatorInfo": { "Title": "Trugo" },
+    "UsageType": { "Title": "Public" },
     "AddressInfo": {
       "Title": "Polatlı Highway Station",
-      "AddressLine1": "Ankara - Eskişehir Yolu Üzeri",
+      "AddressLine1": "Ankara-Eskişehir Yolu",
       "Town": "Polatlı",
       "StateOrProvince": "Ankara",
       "Postcode": "06900",
@@ -145,22 +64,7 @@
       "Distance": 58.3
     },
     "Connections": [
-      {
-        "PowerKW": 180,
-        "Quantity": 2,
-        "ConnectionType": {
-          "Title": "CCS"
-        },
-        "CurrentType": {
-          "Title": "DC"
-        },
-        "Level": {
-          "IsFastChargeCapable": true
-        },
-        "StatusType": {
-          "Title": "Operational"
-        }
-      }
+      { "PowerKW": 180, "Quantity": 2, "ConnectionType": { "Title": "CCS" }, "CurrentType": { "Title": "DC" }, "Level": { "IsFastChargeCapable": true }, "StatusType": { "Title": "Operational" } }
     ]
   },
   {
@@ -168,16 +72,9 @@
     "UUID": "sample-ocm-004",
     "UsageCost": "Ücretli",
     "NumberOfPoints": 2,
-    "StatusType": {
-      "Title": "Operational",
-      "IsOperational": true
-    },
-    "OperatorInfo": {
-      "Title": "ZES"
-    },
-    "UsageType": {
-      "Title": "Public"
-    },
+    "StatusType": { "Title": "Operational", "IsOperational": true },
+    "OperatorInfo": { "Title": "ZES" },
+    "UsageType": { "Title": "Public" },
     "AddressInfo": {
       "Title": "Sivrihisar Roadside Station",
       "AddressLine1": "D200 Karayolu Üzeri",
@@ -189,22 +86,7 @@
       "Distance": 135.7
     },
     "Connections": [
-      {
-        "PowerKW": 90,
-        "Quantity": 2,
-        "ConnectionType": {
-          "Title": "CCS"
-        },
-        "CurrentType": {
-          "Title": "DC"
-        },
-        "Level": {
-          "IsFastChargeCapable": true
-        },
-        "StatusType": {
-          "Title": "Operational"
-        }
-      }
+      { "PowerKW": 90, "Quantity": 2, "ConnectionType": { "Title": "CCS" }, "CurrentType": { "Title": "DC" }, "Level": { "IsFastChargeCapable": true }, "StatusType": { "Title": "Operational" } }
     ]
   },
   {
@@ -212,16 +94,9 @@
     "UUID": "sample-ocm-005",
     "UsageCost": "Ücretli",
     "NumberOfPoints": 4,
-    "StatusType": {
-      "Title": "Operational",
-      "IsOperational": true
-    },
-    "OperatorInfo": {
-      "Title": "Eşarj"
-    },
-    "UsageType": {
-      "Title": "Public"
-    },
+    "StatusType": { "Title": "Operational", "IsOperational": true },
+    "OperatorInfo": { "Title": "Eşarj" },
+    "UsageType": { "Title": "Public" },
     "AddressInfo": {
       "Title": "Eskişehir Vega Outlet Station",
       "AddressLine1": "Bursa Yolu 3. Km",
@@ -233,38 +108,123 @@
       "Distance": 2.1
     },
     "Connections": [
-      {
-        "PowerKW": 120,
-        "Quantity": 2,
-        "ConnectionType": {
-          "Title": "CCS"
-        },
-        "CurrentType": {
-          "Title": "DC"
-        },
-        "Level": {
-          "IsFastChargeCapable": true
-        },
-        "StatusType": {
-          "Title": "Operational"
-        }
-      },
-      {
-        "PowerKW": 22,
-        "Quantity": 2,
-        "ConnectionType": {
-          "Title": "Type 2"
-        },
-        "CurrentType": {
-          "Title": "AC"
-        },
-        "Level": {
-          "IsFastChargeCapable": false
-        },
-        "StatusType": {
-          "Title": "Operational"
-        }
-      }
+      { "PowerKW": 120, "Quantity": 2, "ConnectionType": { "Title": "CCS" }, "CurrentType": { "Title": "DC" }, "Level": { "IsFastChargeCapable": true }, "StatusType": { "Title": "Operational" } },
+      { "PowerKW": 22, "Quantity": 2, "ConnectionType": { "Title": "Type 2" }, "CurrentType": { "Title": "AC" }, "Level": { "IsFastChargeCapable": false }, "StatusType": { "Title": "Operational" } }
+    ]
+  },
+  {
+    "ID": 900006,
+    "UUID": "sample-ocm-006",
+    "UsageCost": "Ücretli",
+    "NumberOfPoints": 4,
+    "StatusType": { "Title": "Operational", "IsOperational": true },
+    "OperatorInfo": { "Title": "Trugo" },
+    "UsageType": { "Title": "Public" },
+    "AddressInfo": {
+      "Title": "Gerede TEM Dinlenme Tesisi",
+      "AddressLine1": "TEM Otoyolu Gerede Mola",
+      "Town": "Gerede",
+      "StateOrProvince": "Bolu",
+      "Postcode": "14750",
+      "Latitude": 40.8931,
+      "Longitude": 32.1933,
+      "Distance": 1.2
+    },
+    "Connections": [
+      { "PowerKW": 180, "Quantity": 2, "ConnectionType": { "Title": "CCS" }, "CurrentType": { "Title": "DC" }, "Level": { "IsFastChargeCapable": true }, "StatusType": { "Title": "Operational" } },
+      { "PowerKW": 50, "Quantity": 2, "ConnectionType": { "Title": "CHAdeMO" }, "CurrentType": { "Title": "DC" }, "Level": { "IsFastChargeCapable": true }, "StatusType": { "Title": "Operational" } }
+    ]
+  },
+  {
+    "ID": 900007,
+    "UUID": "sample-ocm-007",
+    "UsageCost": "Ücretli",
+    "NumberOfPoints": 3,
+    "StatusType": { "Title": "Operational", "IsOperational": true },
+    "OperatorInfo": { "Title": "ZES" },
+    "UsageType": { "Title": "Public" },
+    "AddressInfo": {
+      "Title": "Bolu Dağı TEM İstasyonu",
+      "AddressLine1": "TEM O-4 Bolu Geçişi",
+      "Town": "Bolu",
+      "StateOrProvince": "Bolu",
+      "Postcode": "14200",
+      "Latitude": 40.7359,
+      "Longitude": 31.6019,
+      "Distance": 3.5
+    },
+    "Connections": [
+      { "PowerKW": 150, "Quantity": 3, "ConnectionType": { "Title": "CCS" }, "CurrentType": { "Title": "DC" }, "Level": { "IsFastChargeCapable": true }, "StatusType": { "Title": "Operational" } }
+    ]
+  },
+  {
+    "ID": 900008,
+    "UUID": "sample-ocm-008",
+    "UsageCost": "Ücretli",
+    "NumberOfPoints": 4,
+    "StatusType": { "Title": "Operational", "IsOperational": true },
+    "OperatorInfo": { "Title": "Eşarj" },
+    "UsageType": { "Title": "Public" },
+    "AddressInfo": {
+      "Title": "Düzce TEM Şarj Noktası",
+      "AddressLine1": "TEM Otoyolu Düzce Çıkışı",
+      "Town": "Düzce",
+      "StateOrProvince": "Düzce",
+      "Postcode": "81010",
+      "Latitude": 40.8438,
+      "Longitude": 31.1620,
+      "Distance": 2.0
+    },
+    "Connections": [
+      { "PowerKW": 180, "Quantity": 2, "ConnectionType": { "Title": "CCS" }, "CurrentType": { "Title": "DC" }, "Level": { "IsFastChargeCapable": true }, "StatusType": { "Title": "Operational" } },
+      { "PowerKW": 22, "Quantity": 2, "ConnectionType": { "Title": "Type 2" }, "CurrentType": { "Title": "AC" }, "Level": { "IsFastChargeCapable": false }, "StatusType": { "Title": "Operational" } }
+    ]
+  },
+  {
+    "ID": 900009,
+    "UUID": "sample-ocm-009",
+    "UsageCost": "Ücretli",
+    "NumberOfPoints": 6,
+    "StatusType": { "Title": "Operational", "IsOperational": true },
+    "OperatorInfo": { "Title": "Trugo" },
+    "UsageType": { "Title": "Public" },
+    "AddressInfo": {
+      "Title": "Sapanca Gölü TEM İstasyonu",
+      "AddressLine1": "TEM Otoyolu Sapanca Mola",
+      "Town": "Sapanca",
+      "StateOrProvince": "Sakarya",
+      "Postcode": "54600",
+      "Latitude": 40.6926,
+      "Longitude": 30.2724,
+      "Distance": 1.8
+    },
+    "Connections": [
+      { "PowerKW": 180, "Quantity": 4, "ConnectionType": { "Title": "CCS" }, "CurrentType": { "Title": "DC" }, "Level": { "IsFastChargeCapable": true }, "StatusType": { "Title": "Operational" } },
+      { "PowerKW": 50, "Quantity": 2, "ConnectionType": { "Title": "CHAdeMO" }, "CurrentType": { "Title": "DC" }, "Level": { "IsFastChargeCapable": true }, "StatusType": { "Title": "Operational" } }
+    ]
+  },
+  {
+    "ID": 900010,
+    "UUID": "sample-ocm-010",
+    "UsageCost": "Ücretli",
+    "NumberOfPoints": 8,
+    "StatusType": { "Title": "Operational", "IsOperational": true },
+    "OperatorInfo": { "Title": "ZES" },
+    "UsageType": { "Title": "Public" },
+    "AddressInfo": {
+      "Title": "Gebze Viaport AVM DC Hub",
+      "AddressLine1": "Viaport AVM, TEM Gebze",
+      "Town": "Gebze",
+      "StateOrProvince": "Kocaeli",
+      "Postcode": "41400",
+      "Latitude": 40.8017,
+      "Longitude": 29.4317,
+      "Distance": 1.1
+    },
+    "Connections": [
+      { "PowerKW": 350, "Quantity": 4, "ConnectionType": { "Title": "CCS" }, "CurrentType": { "Title": "DC" }, "Level": { "IsFastChargeCapable": true }, "StatusType": { "Title": "Operational" } },
+      { "PowerKW": 180, "Quantity": 2, "ConnectionType": { "Title": "CCS" }, "CurrentType": { "Title": "DC" }, "Level": { "IsFastChargeCapable": true }, "StatusType": { "Title": "Operational" } },
+      { "PowerKW": 22, "Quantity": 2, "ConnectionType": { "Title": "Type 2" }, "CurrentType": { "Title": "AC" }, "Level": { "IsFastChargeCapable": false }, "StatusType": { "Title": "Operational" } }
     ]
   }
 ]
