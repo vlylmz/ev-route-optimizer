@@ -112,7 +112,7 @@ class ChargingStopSelector:
             }
         """
         needs_charging = bool(
-            _pick(charge_need, "needs_charging", "requires_charging", default=False)
+            _pick(charge_need, "needs_charging", "requires_charging", "charging_needed", "charging_required", default=False)
         )
 
         if not needs_charging:
@@ -401,7 +401,7 @@ class ChargingStopSelector:
         distance_km: float,
     ) -> float:
         initial_soc = _safe_float(
-            _pick(simulation_result, "initial_soc", "start_soc", default=100.0),
+            _pick(simulation_result, "initial_soc", "start_soc", "start_soc_pct", default=100.0),
             100.0,
         )
 
@@ -410,13 +410,17 @@ class ChargingStopSelector:
             return initial_soc
 
         normalized: List[Tuple[float, float]] = []
+        cumulative = 0.0
         for index, segment in enumerate(segments):
-            seg_distance = _pick(segment, "cumulative_distance_km", "end_distance_km", "distance_km", default=None)
+            # Try precomputed cumulative first; fall back to summing per-segment distance_km
+            seg_distance = _pick(segment, "cumulative_distance_km", "end_distance_km", default=None)
             if seg_distance is None:
-                seg_distance = float(index + 1)
+                per_seg = _safe_float(_pick(segment, "distance_km", default=None), 0.0)
+                cumulative += per_seg
+                seg_distance = cumulative if cumulative > 0 else float(index + 1)
 
             soc_after = _safe_float(
-                _pick(segment, "soc_after", "ending_soc", "end_soc", "remaining_soc"),
+                _pick(segment, "soc_after", "ending_soc", "end_soc", "end_soc_pct", "remaining_soc"),
                 initial_soc,
             )
             normalized.append((_safe_float(seg_distance), soc_after))
