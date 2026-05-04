@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import time
 from dataclasses import dataclass
@@ -11,6 +12,19 @@ import requests
 
 
 Coordinate = Tuple[float, float]  # (lat, lon)
+
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    r = 6371.0
+    d_lat = math.radians(lat2 - lat1)
+    d_lon = math.radians(lon2 - lon1)
+    a = (
+        math.sin(d_lat / 2) ** 2
+        + math.cos(math.radians(lat1))
+        * math.cos(math.radians(lat2))
+        * math.sin(d_lon / 2) ** 2
+    )
+    return 2 * r * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
 class ChargingServiceError(Exception):
@@ -55,6 +69,7 @@ class OpenChargeMapService:
         timeout: int = 20,
         user_agent: str = "ev-route-optimizer/0.1",
         fallback_file: str | Path | None = None,
+        tr_cache_file: str | Path | None = None,
         debug: bool = True,
     ) -> None:
         raw_key = api_key or os.getenv("OCM_API_KEY")
@@ -68,6 +83,14 @@ class OpenChargeMapService:
             if fallback_file
             else Path("app/data/sample_stations.json")
         )
+        # TR-wide önbellek: scripts/fetch_all_tr_stations.py'nin çıktısı.
+        # Live API hata verdiğinde önce buradan filtreleyerek istasyon döndürürüz.
+        self.tr_cache_file = (
+            Path(tr_cache_file)
+            if tr_cache_file
+            else Path("app/data/all_tr_stations.json")
+        )
+        self._tr_cache_stations: Optional[List[ChargingStation]] = None
 
         # Circuit breaker:
         # İlk canlı API başarısız olursa aynı çalışmada tekrar zorlamayız.
@@ -216,6 +239,96 @@ class OpenChargeMapService:
 
         return stations
 
+    def _load_tr_cache_stations(self) -> List[ChargingStation]:
+        """app/data/all_tr_stations.json dosyasını yükler ve memoize eder."""
+        if self._tr_cache_stations is not None:
+            return self._tr_cache_stations
+
+        if not self.tr_cache_file.exists():
+            self._tr_cache_stations = []
+            return self._tr_cache_stations
+
+        try:
+            with self.tr_cache_file.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            self._tr_cache_stations = []
+            return self._tr_cache_stations
+
+        if not isinstance(data, list):
+            self._tr_cache_stations = []
+            return self._tr_cache_stations
+
+        stations: List[ChargingStation] = []
+        for item in data:
+            try:
+                stations.append(self._normalize_station(item))
+            except Exception:
+                continue
+
+        self._debug_print(
+            f"INFO: TR cache yüklendi → {len(stations)} istasyon "
+            f"({self.tr_cache_file})"
+        )
+        self._tr_cache_stations = stations
+        return stations
+
+    def _filter_tr_cache_by_distance(
+        self,
+        coord: Coordinate,
+        distance_km: float,
+        max_results: int,
+    ) -> List[ChargingStation]:
+        """TR cache'i verilen noktaya göre haversine ile filtreler ve mesafe yazar."""
+        cache = self._load_tr_cache_stations()
+        if not cache:
+            return []
+
+        lat, lon = coord
+        scored: List[Tuple[float, ChargingStation]] = []
+        for station in cache:
+            d = _haversine_km(lat, lon, station.latitude, station.longitude)
+            if d <= distance_km:
+                # distance_km alanını günceleyip yeni dataclass üret
+                updated = ChargingStation(
+                    ocm_id=station.ocm_id,
+                    uuid=station.uuid,
+                    name=station.name,
+                    operator=station.operator,
+                    usage_type=station.usage_type,
+                    usage_cost=station.usage_cost,
+                    address=station.address,
+                    town=station.town,
+                    latitude=station.latitude,
+                    longitude=station.longitude,
+                    distance_km=round(d, 3),
+                    number_of_points=station.number_of_points,
+                    status=station.status,
+                    is_operational=station.is_operational,
+                    connections=station.connections,
+                    raw=station.raw,
+                )
+                scored.append((d, updated))
+
+        scored.sort(key=lambda pair: pair[0])
+        return [s for _, s in scored[:max_results]]
+
+    def _resolve_fallback(
+        self,
+        coord: Coordinate,
+        distance_km: float,
+        max_results: int,
+    ) -> List[ChargingStation]:
+        """Önce TR-wide cache'i dene, yoksa sample_stations'a düş."""
+        tr_results = self._filter_tr_cache_by_distance(
+            coord=coord,
+            distance_km=distance_km,
+            max_results=max_results,
+        )
+        if tr_results:
+            return tr_results
+        return self._load_fallback_stations()
+
     def _request_with_retry(
         self,
         url: str,
@@ -305,15 +418,21 @@ class OpenChargeMapService:
 
         if not self.api_key:
             if allow_fallback:
-                fallback_stations = self._load_fallback_stations()
-                return fallback_stations if fallback_stations else []
+                return self._resolve_fallback(
+                    coord=coord,
+                    distance_km=distance_km,
+                    max_results=max_results,
+                )
             raise ChargingServiceError(
                 "OCM_API_KEY bulunamadi. Once terminalde export et."
             )
 
         if allow_fallback and not self.live_api_available:
-            fallback_stations = self._load_fallback_stations()
-            return fallback_stations if fallback_stations else []
+            return self._resolve_fallback(
+                coord=coord,
+                distance_km=distance_km,
+                max_results=max_results,
+            )
 
         url = f"{self.base_url}/poi"
         params: Dict[str, Any] = {
@@ -375,11 +494,11 @@ class OpenChargeMapService:
                 f"WARNING: Live OCM failed, using fallback. Reason: {type(exc).__name__}"
             )
 
-            fallback_stations = self._load_fallback_stations()
-            if fallback_stations:
-                return fallback_stations
-
-            return []
+            return self._resolve_fallback(
+                coord=coord,
+                distance_km=distance_km,
+                max_results=max_results,
+            )
 
     def get_nearby_stations_dict(
         self,
