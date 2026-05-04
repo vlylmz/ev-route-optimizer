@@ -103,6 +103,7 @@ export function RouteForm({
   const [start, setStart] = useState<GeocodeResultItem | null>(null)
   const [end, setEnd] = useState<GeocodeResultItem | null>(null)
   const [initialSoc, setInitialSoc] = useState('80')
+  const [targetArrivalSoc, setTargetArrivalSoc] = useState<number>(20)
   const [strategies, setStrategies] = useState<StrategyName[]>([
     'fast',
     'efficient',
@@ -136,6 +137,7 @@ export function RouteForm({
       start: { lat: start.lat, lon: start.lon },
       end: { lat: end.lat, lon: end.lon },
       initial_soc_pct: parseFloat(initialSoc),
+      target_arrival_soc_pct: targetArrivalSoc,
       strategies,
       use_ml: useMl,
     })
@@ -182,18 +184,63 @@ export function RouteForm({
         />
       </div>
 
+      <div className="grid grid-cols-2 gap-3">
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-slate-600">
+            🔋 Başlangıç SOC
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min="0"
+              max="100"
+              value={initialSoc}
+              onChange={(e) => setInitialSoc(e.target.value)}
+              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+            <span className="text-xs text-slate-500">%</span>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-slate-600">
+            🎯 Varış SOC (min)
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min="0"
+              max="100"
+              value={targetArrivalSoc}
+              onChange={(e) =>
+                setTargetArrivalSoc(
+                  Math.max(0, Math.min(100, Number(e.target.value) || 0)),
+                )
+              }
+              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+            <span className="text-xs text-slate-500">%</span>
+          </div>
+        </div>
+      </div>
+
       <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium text-slate-600">
-          Başlangıç SOC (%)
-        </label>
         <input
-          type="number"
-          min="0"
-          max="100"
-          value={initialSoc}
-          onChange={(e) => setInitialSoc(e.target.value)}
-          className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          type="range"
+          min={0}
+          max={100}
+          step={5}
+          value={targetArrivalSoc}
+          onChange={(e) => setTargetArrivalSoc(parseInt(e.target.value, 10))}
+          className="h-2 w-full accent-indigo-600"
         />
+        <div className="flex justify-between text-[10px] text-slate-400">
+          <span>%0</span>
+          <span className="font-semibold text-indigo-600">
+            Varışta minimum {targetArrivalSoc}%
+          </span>
+          <span>%100</span>
+        </div>
       </div>
 
       <fieldset className="flex flex-col gap-2">

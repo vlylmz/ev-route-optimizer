@@ -159,6 +159,14 @@ class ChargingPlanner:
             self.reserve_soc_default,
         )
 
+        # Kullanıcının varış SOC tercihi (varsa) — varışta minimum eşik
+        # reserve_soc in-trip safety floor; arrival_target sadece bitişte uygulanır.
+        target_arrival_soc = _safe_float(
+            _pick(charge_need, "target_arrival_soc_pct", default=None),
+            reserve_soc,
+        )
+        effective_arrival_floor = max(reserve_soc, target_arrival_soc)
+
         station_name = _pick(selected_station, "name", "title", default="İstasyon")
         distance_along_route_km = _safe_float(
             _pick(selected_station, "distance_along_route_km"),
@@ -210,7 +218,7 @@ class ChargingPlanner:
         projected_arrival_soc_percent = target_soc_percent - required_post_charge_soc_percent
         projected_arrival_soc_percent = max(projected_arrival_soc_percent, 0.0)
 
-        feasible = projected_arrival_soc_percent >= reserve_soc
+        feasible = projected_arrival_soc_percent >= effective_arrival_floor
 
         extra_detour_energy_kwh = detour_distance_km * avg_consumption_kwh_per_km
         total_trip_energy_kwh = total_energy_kwh + extra_detour_energy_kwh
@@ -268,6 +276,7 @@ class ChargingPlanner:
             avg_consumption_kwh_per_km=avg_consumption_kwh_per_km,
             usable_battery_kwh=usable_battery_kwh,
             reserve_soc=reserve_soc,
+            target_arrival_soc=target_arrival_soc,
         )
 
         if multi_stop_result is not None and multi_stop_result.get("feasible"):
@@ -289,6 +298,7 @@ class ChargingPlanner:
         avg_consumption_kwh_per_km: float,
         usable_battery_kwh: float,
         reserve_soc: float,
+        target_arrival_soc: Optional[float] = None,
     ) -> Optional[Dict[str, Any]]:
         """
         Tek durak yetmedigi durumlarda greedy bir cok durakli zincir kurar.
@@ -338,6 +348,12 @@ class ChargingPlanner:
             max_target_soc = 80.0
         max_stops = 5
 
+        # Varişta tutulacak minimum SOC: reserve ile target'in büyüğü
+        effective_arrival_floor = max(
+            reserve_soc,
+            float(target_arrival_soc) if target_arrival_soc is not None else 0.0,
+        )
+
         stops: List[Dict[str, Any]] = []
         current_distance = 0.0
         current_soc = initial_soc
@@ -352,8 +368,8 @@ class ChargingPlanner:
                 / usable_battery_kwh
             ) * 100.0
 
-            if current_soc - soc_to_finish_pct >= reserve_soc:
-                break  # bitise dogrudan ulasilabilir
+            if current_soc - soc_to_finish_pct >= effective_arrival_floor:
+                break  # bitise istenen marjla ulasilabilir
 
             # Mevcut SOC ile reserve+buffer kalacak sekilde menzil
             usable_pct = max(current_soc - reserve_soc - soc_buffer, 0.0)
@@ -402,7 +418,7 @@ class ChargingPlanner:
             ) * 100.0
             soc_at_arrival = current_soc - soc_drop_pct
 
-            # Hedef SOC: kalan mesafeyi reserve marjla bitirmeye yetecek kadar (cap 80%)
+            # Hedef SOC: kalan mesafeyi varış marjıyla bitirmeye yetecek kadar
             remaining_after_stop = max(
                 route_distance_km - selected["distance_along_route_km"], 0.0
             )
@@ -414,7 +430,12 @@ class ChargingPlanner:
                 )
                 / usable_battery_kwh
             ) * 100.0
-            target_soc = min(soc_to_finish_after_pct + reserve_soc, max_target_soc)
+            # Bu son durak ise varış marji effective_arrival_floor (target),
+            # değilse sadece in-trip reserve_soc yeterli (sonraki stop'ta tekrar şarj olur).
+            # Pratik: her durakta target'a göre planla, gereksiz stop oluşmasın.
+            target_soc = min(
+                soc_to_finish_after_pct + effective_arrival_floor, max_target_soc
+            )
             target_soc = max(target_soc, soc_at_arrival)
 
             station_power_kw = max(_safe_float(selected.get("power_kw"), 50.0), 1.0)
@@ -462,7 +483,7 @@ class ChargingPlanner:
         ) * 100.0
         projected_arrival_soc = current_soc - final_soc_drop_pct
 
-        feasible = projected_arrival_soc >= reserve_soc
+        feasible = projected_arrival_soc >= effective_arrival_floor
 
         total_charge_minutes = sum(s["charge_minutes"] for s in stops)
         total_detour_minutes = sum(s["detour_minutes"] for s in stops)

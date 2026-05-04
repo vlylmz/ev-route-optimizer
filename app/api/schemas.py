@@ -206,6 +206,15 @@ class OptimizeRequest(BaseModel):
     start: Coordinate
     end: Coordinate
     initial_soc_pct: float = Field(..., ge=0.0, le=100.0)
+    target_arrival_soc_pct: Optional[float] = Field(
+        None,
+        ge=0.0,
+        le=100.0,
+        description=(
+            "Kullanıcının varışta minimum SOC tercihi (%). "
+            "None ise sadece aracın güvenli rezerv eşiği kullanılır."
+        ),
+    )
     strategies: List[StrategyName] = Field(
         default_factory=lambda: ["fast", "efficient", "balanced"]
     )

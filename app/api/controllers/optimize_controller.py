@@ -200,6 +200,12 @@ def optimize_route(
     charge_need_dict = _dataclass_to_dict(charge_need)
     vehicle_dict = _vehicle_to_dict(vehicle)
 
+    # Kullanıcının varış SOC tercihi: planlamada ayrı bir alan olarak iletilir.
+    # Planner reserve_soc'u in-trip floor olarak kullanır,
+    # target_arrival_soc_pct'i ise varışta ayrı kontrol eder.
+    if req.target_arrival_soc_pct is not None:
+        charge_need_dict["target_arrival_soc_pct"] = float(req.target_arrival_soc_pct)
+
     # 4) Profiller
     try:
         profile_result = profiles_engine.generate_profiles(
