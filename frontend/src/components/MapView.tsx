@@ -96,7 +96,7 @@ export function MapView({
   const [pos, setPos] = useState<{ lat: number; lon: number } | null>(null)
   const [heading, setHeading] = useState<number>(0)
   const [followMode, setFollowMode] = useState<boolean>(true)
-  const [pitch, setPitch] = useState<number>(75)
+  const [pitch, setPitch] = useState<number>(85)
   const [gpsError, setGpsError] = useState<string | null>(null)
   const [activeStation, setActiveStation] = useState<number | null>(null)
   const [currentSegmentIdx, setCurrentSegmentIdx] = useState<number | null>(
@@ -241,15 +241,19 @@ export function MapView({
   }, [navigationMode])
 
   // Follow mode — haritayı GPS pozisyonuna kilitle
+  // Padding ile aracı ekranın alt 1/3'ünde tutarız (gerçek nav görünümü).
   useEffect(() => {
     if (!navigationMode || !followMode || !pos || !mapRef.current) return
     const map = mapRef.current.getMap()
+    const canvas = map.getCanvas()
+    const h = canvas.clientHeight || 700
     map.easeTo({
       center: [pos.lon, pos.lat],
       bearing: heading,
       pitch,
-      zoom: 17,
+      zoom: 17.5,
       duration: 800,
+      padding: { top: 0, bottom: Math.round(h * 0.55), left: 0, right: 0 },
     })
   }, [pos, heading, followMode, pitch, navigationMode])
 
@@ -510,10 +514,18 @@ export function MapView({
                 max={85}
                 value={pitch}
                 onChange={(e) => setPitch(Number(e.target.value))}
-                className="h-1 w-32"
+                className="h-1 w-32 accent-emerald-500"
               />
-              <span className="w-8 text-right tabular-nums">{pitch}°</span>
+              <span className="w-9 text-right tabular-nums">{pitch}°</span>
             </label>
+            <button
+              type="button"
+              onClick={() => setPitch(85)}
+              className="rounded-md bg-slate-700 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider hover:bg-slate-600"
+              title="Maksimum eğim — araç görüntüsü"
+            >
+              MAX
+            </button>
             <button
               onClick={() => setFollowMode((v) => !v)}
               className={`rounded-md px-3 py-1.5 text-xs ${
