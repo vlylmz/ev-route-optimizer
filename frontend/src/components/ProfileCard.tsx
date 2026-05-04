@@ -7,6 +7,8 @@ import type { Reservation } from './ReservationDialog'
 interface Props {
   card: ProfileCardType
   recommended?: boolean
+  active?: boolean
+  onSelect?: () => void
   reservations?: Record<string, Reservation>
   onReserve?: (stop: RecommendedStop) => void
 }
@@ -29,37 +31,58 @@ function stopKey(strategyKey: string, idx: number): string {
 export function ProfileCard({
   card,
   recommended,
+  active,
+  onSelect,
   reservations = {},
   onReserve,
 }: Props) {
-  const border = recommended
+  const border = active
+    ? 'border-emerald-500 ring-2 ring-emerald-300 bg-emerald-50/80'
+    : recommended
     ? 'border-indigo-500 ring-2 ring-indigo-200'
-    : 'border-slate-200'
+    : 'border-slate-200 hover:border-indigo-300'
 
   const stops = card.recommended_stops ?? []
+
+  const handleHeaderClick = () => {
+    if (onSelect) onSelect()
+  }
 
   return (
     <article
       data-testid={`profile-card-${card.key}`}
-      className={`relative flex flex-col gap-3 rounded-xl border bg-white/85 p-4 shadow-sm backdrop-blur ${border}`}
+      className={`relative flex flex-col gap-3 rounded-xl border bg-white/85 p-4 shadow-sm backdrop-blur transition ${border}`}
     >
-      {recommended && (
+      {active && (
+        <span className="absolute -top-2 left-3 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-semibold text-white shadow">
+          ✓ Haritada
+        </span>
+      )}
+      {recommended && !active && (
         <span className="absolute -top-2 right-3 rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-semibold text-white shadow">
           Önerilen
         </span>
       )}
 
-      <header className="flex items-center gap-2">
+      <button
+        type="button"
+        onClick={handleHeaderClick}
+        disabled={!onSelect}
+        className="flex items-center gap-2 text-left disabled:cursor-default"
+      >
         <span className="text-xl">{STRATEGY_EMOJI[card.key] ?? '•'}</span>
-        <div>
+        <div className="flex-1">
           <h3 className="text-base font-semibold text-slate-900">
             {card.label}
           </h3>
           <p className="text-xs text-slate-500">
             {card.feasible ? 'Uygulanabilir' : 'Uygun değil'}
+            {onSelect && !active && (
+              <span className="ml-1 text-indigo-500">— seçmek için tıkla</span>
+            )}
           </p>
         </div>
-      </header>
+      </button>
 
       <dl className="grid grid-cols-3 gap-2 text-sm">
         <Stat label="Enerji" value={fmt(card.total_energy_kwh, 'kWh', 1)} />

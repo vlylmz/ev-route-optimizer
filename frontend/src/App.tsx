@@ -28,6 +28,7 @@ function App() {
   const [submitted, setSubmitted] = useState<OptimizeRequest | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [navMode, setNavMode] = useState(false)
+  const [activeProfileKey, setActiveProfileKey] = useState<string | null>(null)
 
   // Rezervasyon state'i: key = "<strategy>::<stopIdx>"
   const [reservations, setReservations] = useState<Record<string, Reservation>>(
@@ -41,6 +42,7 @@ function App() {
   const handleSubmit = (req: OptimizeRequest) => {
     setSubmitted(req)
     setReservations({}) // yeni rota → eski rezervasyonları temizle
+    setActiveProfileKey(null) // yeni rota → recommended profile otomatik aktif olur
     optimizeM.mutate(req)
     routeM.mutate({ start: req.start, end: req.end })
   }
@@ -58,6 +60,36 @@ function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeM.data])
+
+  // Optimize sonucu gelince, aktif profil yoksa önerilen profile'ı seç
+  useEffect(() => {
+    const data = optimizeM.data
+    if (!data) return
+    if (!activeProfileKey || !data.profiles.find((p) => p.key === activeProfileKey)) {
+      setActiveProfileKey(
+        data.recommended_profile ?? data.profiles[0]?.key ?? null,
+      )
+    }
+  }, [optimizeM.data, activeProfileKey])
+
+  // Aktif profilin durakları (haritada vurgulanacak)
+  const activeProfileStops = useMemo(() => {
+    if (!optimizeM.data || !activeProfileKey) return []
+    const profile = optimizeM.data.profiles.find(
+      (p) => p.key === activeProfileKey,
+    )
+    if (!profile) return []
+    return profile.recommended_stops.map((s, idx) => {
+      const key = `${profile.key}::${idx}`
+      return {
+        name: s.name,
+        distance_along_route_km: s.distance_along_route_km,
+        power_kw: s.power_kw,
+        charge_minutes: s.charge_minutes,
+        reserved: !!reservations[key],
+      }
+    })
+  }, [optimizeM.data, activeProfileKey, reservations])
 
   const handleStartNav = () => {
     if (geometry.length < 2) return
@@ -106,6 +138,7 @@ function App() {
         end={submitted?.end}
         navigationMode={navMode}
         speedLimits={speedLimitsM.data?.segments ?? []}
+        highlightedStops={activeProfileStops}
       />
 
       {/* Sidebar Aç butonu */}
@@ -238,6 +271,8 @@ function App() {
                   result={optimizeM.data}
                   reservations={reservations}
                   onReserve={handleReserve}
+                  activeProfileKey={activeProfileKey}
+                  onSelectProfile={(key) => setActiveProfileKey(key)}
                 />
               </Section>
             )}

@@ -26,6 +26,15 @@ interface SpeedLimitSegment {
   highway?: string | null
 }
 
+interface HighlightedStop {
+  name: string
+  // Bu stop için yaklaşık koordinat: rota geometrisinden bulacağız
+  distance_along_route_km: number
+  power_kw?: number
+  charge_minutes?: number
+  reserved?: boolean
+}
+
 interface Props {
   geometry: number[][] // [[lat, lon], ...]
   stations?: Station[]
@@ -33,6 +42,7 @@ interface Props {
   end?: { lat: number; lon: number }
   navigationMode?: boolean
   speedLimits?: SpeedLimitSegment[]
+  highlightedStops?: HighlightedStop[]
 }
 
 const MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty'
@@ -80,6 +90,7 @@ export function MapView({
   end,
   navigationMode = false,
   speedLimits,
+  highlightedStops = [],
 }: Props) {
   const mapRef = useRef<MapRef | null>(null)
   const [pos, setPos] = useState<{ lat: number; lon: number } | null>(null)
@@ -106,6 +117,45 @@ export function MapView({
       properties: {},
     }
   }, [geometry, hasRoute])
+
+  // Rota geometrisinin kümülatif mesafe profili (km)
+  const cumulativeDistances = useMemo(() => {
+    if (!hasRoute) return [] as number[]
+    const arr: number[] = [0]
+    for (let i = 1; i < geometry.length; i++) {
+      const d = haversineKm(
+        geometry[i - 1][0],
+        geometry[i - 1][1],
+        geometry[i][0],
+        geometry[i][1],
+      )
+      arr.push(arr[i - 1] + d)
+    }
+    return arr
+  }, [geometry, hasRoute])
+
+  // Highlighted stop'ları rota üzerinde mesafeye göre yerleştir
+  const highlightedPositions = useMemo(() => {
+    if (!hasRoute || highlightedStops.length === 0) return []
+    return highlightedStops
+      .map((stop) => {
+        // Verilen mesafeye en yakın geometry indeksini bul
+        let bestIdx = 0
+        let bestDiff = Infinity
+        for (let i = 0; i < cumulativeDistances.length; i++) {
+          const diff = Math.abs(cumulativeDistances[i] - stop.distance_along_route_km)
+          if (diff < bestDiff) {
+            bestDiff = diff
+            bestIdx = i
+          }
+        }
+        return {
+          ...stop,
+          lat: geometry[bestIdx][0],
+          lon: geometry[bestIdx][1],
+        }
+      })
+  }, [highlightedStops, cumulativeDistances, geometry, hasRoute])
 
   // Initial view: rotanın bbox'ı ya da Ankara
   const initialView = useMemo(() => {
@@ -398,6 +448,33 @@ export function MapView({
               </div>
             </Popup>
           )}
+
+        {/* Aktif profilin önerilen şarj durakları — numaralı, vurgulu */}
+        {highlightedPositions.map((stop, idx) => (
+          <Marker
+            key={`stop-${idx}-${stop.lat}-${stop.lon}`}
+            longitude={stop.lon}
+            latitude={stop.lat}
+            anchor="bottom"
+          >
+            <div className="flex flex-col items-center">
+              <div
+                className={`flex h-12 w-12 items-center justify-center rounded-full border-[3px] text-base font-bold text-white shadow-xl ${
+                  stop.reserved
+                    ? 'border-white bg-emerald-600'
+                    : 'border-white bg-indigo-600'
+                }`}
+                title={`${stop.name} · ${stop.power_kw ?? '?'} kW`}
+              >
+                {idx + 1}
+              </div>
+              <div className="mt-1 max-w-[140px] truncate rounded bg-white/95 px-2 py-0.5 text-[10px] font-semibold text-slate-800 shadow">
+                {stop.name}
+                {stop.reserved && ' ✓'}
+              </div>
+            </div>
+          </Marker>
+        ))}
 
         {pos && (
           <Marker longitude={pos.lon} latitude={pos.lat} anchor="center">

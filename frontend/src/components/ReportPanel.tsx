@@ -6,9 +6,17 @@ interface Props {
   result: OptimizeResponse
   reservations?: Record<string, Reservation>
   onReserve?: (strategyKey: string, stopIdx: number, stop: RecommendedStop) => void
+  activeProfileKey?: string | null
+  onSelectProfile?: (key: string) => void
 }
 
-export function ReportPanel({ result, reservations, onReserve }: Props) {
+export function ReportPanel({
+  result,
+  reservations,
+  onReserve,
+  activeProfileKey,
+  onSelectProfile,
+}: Props) {
   const { profiles, recommended_profile } = result
 
   return (
@@ -46,6 +54,10 @@ export function ReportPanel({ result, reservations, onReserve }: Props) {
             key={p.key}
             card={p}
             recommended={p.key === recommended_profile}
+            active={activeProfileKey === p.key}
+            onSelect={
+              onSelectProfile ? () => onSelectProfile(p.key) : undefined
+            }
             reservations={reservations}
             onReserve={
               onReserve
