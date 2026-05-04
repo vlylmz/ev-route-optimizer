@@ -51,12 +51,19 @@ class RouteContextService:
         if not geometry:
             raise RouteContextServiceError("Rota geometry verisi boş döndü.")
 
-        # 2) Elevation + slope
-        elevation = self.elevation_service.get_elevation_and_slope(
-            geometry=geometry,
-            min_spacing_km=elevation_min_spacing_km,
-            max_points=elevation_max_points,
-        )
+        # 2) Elevation + slope (Open-Elevation kapali ise duz arazi varsay)
+        try:
+            elevation = self.elevation_service.get_elevation_and_slope(
+                geometry=geometry,
+                min_spacing_km=elevation_min_spacing_km,
+                max_points=elevation_max_points,
+            )
+        except Exception:  # noqa: BLE001
+            elevation = self._build_flat_elevation_fallback(
+                geometry=geometry,
+                min_spacing_km=elevation_min_spacing_km,
+                max_points=elevation_max_points,
+            )
 
         sampled_geometry: List[Coordinate] = elevation["sampled_geometry"]
 
@@ -138,6 +145,67 @@ class RouteContextService:
                 deduped.append(point)
 
         return deduped
+
+    def _build_flat_elevation_fallback(
+        self,
+        geometry: List[Coordinate],
+        min_spacing_km: float,
+        max_points: int,
+    ) -> Dict[str, Any]:
+        """
+        Open-Elevation kullanilamadiginda duz arazi varsayan fallback.
+        Sadece sample_geometry'yi kullanir; tum yukseklikleri 0 yapar,
+        slope segmentlerini 0 grade ile uretir. Boylece sistem ayakta
+        kalabiliyor (enerji modeli sicaklik ve hiz uzerinden hesap yapar).
+        """
+        sampled_geometry = self.elevation_service.sample_geometry(
+            geometry=geometry,
+            min_spacing_km=min_spacing_km,
+            max_points=max_points,
+        )
+
+        elevation_profile: List[Dict[str, Any]] = []
+        cumulative = 0.0
+        for i, (lat, lon) in enumerate(sampled_geometry):
+            if i > 0:
+                prev_lat, prev_lon = sampled_geometry[i - 1]
+                cumulative += self.elevation_service.haversine_km(
+                    (prev_lat, prev_lon), (lat, lon)
+                )
+            elevation_profile.append(
+                {
+                    "lat": lat,
+                    "lon": lon,
+                    "elevation_m": 0.0,
+                    "cumulative_distance_km": cumulative,
+                }
+            )
+
+        slope_segments: List[Dict[str, Any]] = []
+        for i in range(1, len(sampled_geometry)):
+            prev_lat, prev_lon = sampled_geometry[i - 1]
+            lat, lon = sampled_geometry[i]
+            d = self.elevation_service.haversine_km(
+                (prev_lat, prev_lon), (lat, lon)
+            )
+            slope_segments.append(
+                {
+                    "start": (prev_lat, prev_lon),
+                    "end": (lat, lon),
+                    "distance_km": d,
+                    "elevation_start_m": 0.0,
+                    "elevation_end_m": 0.0,
+                    "elevation_delta_m": 0.0,
+                    "grade_pct": 0.0,
+                }
+            )
+
+        return {
+            "sampled_point_count": len(sampled_geometry),
+            "sampled_geometry": sampled_geometry,
+            "elevation_profile": elevation_profile,
+            "slope_segments": slope_segments,
+        }
 
     @staticmethod
     def _build_slope_summary(slope_segments: List[Dict[str, Any]]) -> Dict[str, Any]:
