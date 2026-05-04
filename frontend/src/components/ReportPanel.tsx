@@ -44,7 +44,7 @@ export function ReportPanel({ result }: Props) {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="flex flex-col gap-3">
         {profiles.map((p) => (
           <ProfileCard
             key={p.key}

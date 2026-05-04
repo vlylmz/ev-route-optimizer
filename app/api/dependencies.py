@@ -17,6 +17,7 @@ from app.core.route_energy_simulator import RouteEnergySimulator
 from app.core.route_profiles import RouteProfiles
 from app.services.charging_service import OpenChargeMapService
 from app.services.route_context_service import RouteContextService
+from app.services.speed_limit_service import OverpassSpeedLimitService
 from ml.model_service import ModelService
 
 
@@ -54,3 +55,7 @@ def get_route_profiles(request: Request) -> RouteProfiles:
 
 def get_charging_service(request: Request) -> OpenChargeMapService:
     return request.app.state.charging_service
+
+
+def get_speed_limit_service(request: Request) -> OverpassSpeedLimitService:
+    return request.app.state.speed_limit_service

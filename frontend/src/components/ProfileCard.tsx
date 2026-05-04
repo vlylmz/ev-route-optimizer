@@ -44,21 +44,18 @@ export function ProfileCard({ card, recommended }: Props) {
         </div>
       </header>
 
-      <dl className="grid grid-cols-2 gap-3 text-sm">
-        <Stat label="Toplam enerji" value={fmt(card.total_energy_kwh, 'kWh', 2)} />
-        <Stat label="Toplam süre" value={fmt(card.total_trip_minutes, 'dk')} />
-        <Stat label="Şarj süresi" value={fmt(card.charging_minutes, 'dk')} />
+      <dl className="grid grid-cols-3 gap-2 text-sm">
+        <Stat label="Enerji" value={fmt(card.total_energy_kwh, 'kWh', 1)} />
+        <Stat label="Süre" value={fmt(card.total_trip_minutes, 'dk', 0)} />
+        <Stat label="Şarj" value={fmt(card.charging_minutes, 'dk', 0)} />
         <Stat
-          label="Durak sayısı"
+          label="Durak"
           value={card.stop_count != null ? String(card.stop_count) : '—'}
         />
+        <Stat label="Varış" value={fmt(card.final_soc_pct, '%', 0)} />
         <Stat
-          label="Varış SOC"
-          value={fmt(card.final_soc_pct, '%', 1)}
-        />
-        <Stat
-          label="Tahmin"
-          value={card.used_ml ? `ML · ${card.model_version ?? '-'}` : 'Formül'}
+          label="Kaynak"
+          value={card.used_ml ? 'ML' : 'Formül'}
         />
       </dl>
     </article>

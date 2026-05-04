@@ -4,12 +4,14 @@ import {
   OptimizeRequestSchema,
   OptimizeResponseSchema,
   RouteResponseSchema,
+  SpeedLimitsResponseSchema,
   VehicleDetailSchema,
   VehicleSummarySchema,
   type HealthResponse,
   type OptimizeRequest,
   type OptimizeResponse,
   type RouteResponse,
+  type SpeedLimitsResponse,
   type VehicleDetail,
   type VehicleSummary,
 } from './schemas'
@@ -100,6 +102,21 @@ export async function postOptimize(
     const body = OptimizeRequestSchema.parse(input)
     const res = await api.post('/optimize', body)
     return OptimizeResponseSchema.parse(res.data)
+  } catch (err) {
+    rethrow(err)
+  }
+}
+
+export async function postSpeedLimits(body: {
+  geometry: number[][]
+  sample_every_n_points?: number
+}): Promise<SpeedLimitsResponse> {
+  try {
+    const res = await api.post('/speed-limits', {
+      geometry: body.geometry,
+      sample_every_n_points: body.sample_every_n_points ?? 20,
+    })
+    return SpeedLimitsResponseSchema.parse(res.data)
   } catch (err) {
     rethrow(err)
   }

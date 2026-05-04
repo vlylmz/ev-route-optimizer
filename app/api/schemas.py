@@ -257,3 +257,37 @@ class OptimizeResponse(BaseModel):
     recommended_profile: Optional[StrategyName] = None
     profiles: List[ProfileCard] = Field(default_factory=list)
     raw_optimization: Dict[str, Any] = Field(default_factory=dict)
+
+
+# =========================================================
+# /speed-limits
+# =========================================================
+
+
+class SpeedLimitsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    geometry: List[List[float]] = Field(
+        ...,
+        description="Rota koordinat listesi [[lat, lon], ...]",
+        min_length=2,
+    )
+    sample_every_n_points: int = Field(
+        20,
+        gt=0,
+        le=200,
+        description="Hız sınırı sorgusu için her N noktada bir örnekle.",
+    )
+
+
+class SpeedLimitSegment(BaseModel):
+    start_index: int
+    end_index: int
+    maxspeed_kmh: Optional[float] = None
+    highway: Optional[str] = None
+
+
+class SpeedLimitsResponse(BaseModel):
+    segments: List[SpeedLimitSegment] = Field(default_factory=list)
+    source: str = Field(default="overpass", description="overpass | fallback")
+    sampled_point_count: int = 0

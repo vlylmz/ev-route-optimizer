@@ -97,6 +97,27 @@ export const OptimizeRequestSchema = z.object({
 })
 export type OptimizeRequest = z.infer<typeof OptimizeRequestSchema>
 
+export const SpeedLimitSegmentSchema = z.object({
+  start_index: z.number(),
+  end_index: z.number(),
+  maxspeed_kmh: z.number().nullable().optional(),
+  highway: z.string().nullable().optional(),
+})
+export type SpeedLimitSegment = z.infer<typeof SpeedLimitSegmentSchema>
+
+export const SpeedLimitsResponseSchema = z.object({
+  segments: z.array(SpeedLimitSegmentSchema),
+  source: z.string(),
+  sampled_point_count: z.number().default(0),
+})
+export type SpeedLimitsResponse = z.infer<typeof SpeedLimitsResponseSchema>
+
+export const SpeedLimitsRequestSchema = z.object({
+  geometry: z.array(z.array(z.number())).min(2),
+  sample_every_n_points: z.number().int().positive().default(20),
+})
+export type SpeedLimitsRequest = z.infer<typeof SpeedLimitsRequestSchema>
+
 export const RouteResponseSchema = z.object({
   summary: z.object({
     distance_km: z.number(),

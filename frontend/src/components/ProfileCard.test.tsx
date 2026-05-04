@@ -21,8 +21,8 @@ describe('ProfileCard', () => {
   it('renders summary stats', () => {
     render(<ProfileCard card={baseCard} />)
     expect(screen.getByText('Dengeli')).toBeInTheDocument()
-    expect(screen.getByText('24.12 kWh')).toBeInTheDocument()
-    expect(screen.getByText('185.4 dk')).toBeInTheDocument()
+    expect(screen.getByText('24.1 kWh')).toBeInTheDocument()
+    expect(screen.getByText('185 dk')).toBeInTheDocument()
     expect(screen.getByText('Formül')).toBeInTheDocument()
   })
 
@@ -37,7 +37,7 @@ describe('ProfileCard', () => {
         card={{ ...baseCard, used_ml: true, model_version: 'lgbm_v1' }}
       />,
     )
-    expect(screen.getByText('ML · lgbm_v1')).toBeInTheDocument()
+    expect(screen.getByText('ML')).toBeInTheDocument()
   })
 
   it('shows dash for missing values', () => {
