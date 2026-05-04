@@ -67,12 +67,15 @@ class RouteContextService:
 
         sampled_geometry: List[Coordinate] = elevation["sampled_geometry"]
 
-        # 3) Hava özeti
+        # 3) Hava özeti (Open-Meteo kapali ise sabit 15°C fallback)
         weather_points = self._select_weather_points(
             sampled_geometry,
             limit=weather_sample_limit,
         )
-        weather = self.weather_service.summarize_route_temperature(weather_points)
+        try:
+            weather = self.weather_service.summarize_route_temperature(weather_points)
+        except Exception:  # noqa: BLE001
+            weather = self._build_default_weather_fallback(weather_points)
 
         # 4) Şarj istasyonları
         stations_raw = self.charging_service.find_stations_along_route(
@@ -145,6 +148,34 @@ class RouteContextService:
                 deduped.append(point)
 
         return deduped
+
+    @staticmethod
+    def _build_default_weather_fallback(
+        weather_points: List[Coordinate],
+    ) -> Dict[str, Any]:
+        """
+        Open-Meteo kullanilamadiginda makul varsayilanlar.
+        15°C ortalama, hafif sicaklik degisimi — TR icin tipik araliklar.
+        Boylece enerji modelinin sicaklik etkisi 0 olmak yerine
+        nominal degerden hesap yapilir.
+        """
+        default_temp = 15.0
+        return {
+            "point_count": len(weather_points),
+            "min_temp_c": default_temp,
+            "max_temp_c": default_temp,
+            "avg_temp_c": default_temp,
+            "points": [
+                {
+                    "lat": lat,
+                    "lon": lon,
+                    "temperature_c": default_temp,
+                    "wind_speed_ms": 0.0,
+                    "humidity_percent": 50.0,
+                }
+                for lat, lon in weather_points
+            ],
+        }
 
     def _build_flat_elevation_fallback(
         self,
