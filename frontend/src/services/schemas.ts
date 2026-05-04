@@ -54,6 +54,18 @@ export type VehicleDetail = z.infer<typeof VehicleDetailSchema>
 export const StrategyNameSchema = z.enum(['fast', 'efficient', 'balanced'])
 export type StrategyName = z.infer<typeof StrategyNameSchema>
 
+export const RecommendedStopSchema = z.object({
+  name: z.string(),
+  distance_along_route_km: z.number(),
+  detour_distance_km: z.number().default(0),
+  detour_minutes: z.number().default(0),
+  arrival_soc_percent: z.number().default(0),
+  target_soc_percent: z.number().default(0),
+  charge_minutes: z.number().default(0),
+  power_kw: z.number().default(0),
+})
+export type RecommendedStop = z.infer<typeof RecommendedStopSchema>
+
 export const ProfileCardSchema = z.object({
   key: StrategyNameSchema,
   label: z.string(),
@@ -65,6 +77,7 @@ export const ProfileCardSchema = z.object({
   final_soc_pct: z.number().nullable().optional(),
   used_ml: z.boolean(),
   model_version: z.string().nullable().optional(),
+  recommended_stops: z.array(RecommendedStopSchema).default([]),
   raw: z.record(z.string(), z.unknown()).default({}),
 })
 export type ProfileCard = z.infer<typeof ProfileCardSchema>
@@ -117,6 +130,23 @@ export const SpeedLimitsRequestSchema = z.object({
   sample_every_n_points: z.number().int().positive().default(20),
 })
 export type SpeedLimitsRequest = z.infer<typeof SpeedLimitsRequestSchema>
+
+export const GeocodeResultItemSchema = z.object({
+  display_name: z.string(),
+  name: z.string(),
+  lat: z.number(),
+  lon: z.number(),
+  type: z.string().nullable().optional(),
+  importance: z.number().default(0),
+  country_code: z.string().nullable().optional(),
+})
+export type GeocodeResultItem = z.infer<typeof GeocodeResultItemSchema>
+
+export const GeocodeResponseSchema = z.object({
+  query: z.string(),
+  results: z.array(GeocodeResultItemSchema),
+})
+export type GeocodeResponse = z.infer<typeof GeocodeResponseSchema>
 
 export const RouteResponseSchema = z.object({
   summary: z.object({

@@ -14,6 +14,7 @@ const baseCard: ProfileCardType = {
   final_soc_pct: 25,
   used_ml: false,
   model_version: null,
+  recommended_stops: [],
   raw: {},
 }
 

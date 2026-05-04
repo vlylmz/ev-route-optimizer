@@ -25,6 +25,7 @@ from app.api.schemas import (
     OptimizeRequest,
     OptimizeResponse,
     ProfileCard,
+    RecommendedStop,
 )
 from app.core.charge_need_analyzer import ChargeNeedAnalyzer
 from app.core.energy_model import Vehicle
@@ -71,6 +72,33 @@ def _build_profile_cards(profile_result: Dict[str, Any]) -> List[ProfileCard]:
         profile = profiles.get(key, {})
         summary = profile.get("summary") or {}
         ml_summary = profile.get("ml_summary") or {}
+        stops_raw = profile.get("recommended_stops") or []
+
+        recommended_stops: List[RecommendedStop] = []
+        for s in stops_raw:
+            try:
+                recommended_stops.append(
+                    RecommendedStop(
+                        name=str(s.get("name", "İstasyon")),
+                        distance_along_route_km=float(
+                            s.get("distance_along_route_km", 0.0) or 0.0
+                        ),
+                        detour_distance_km=float(
+                            s.get("detour_distance_km", 0.0) or 0.0
+                        ),
+                        detour_minutes=float(s.get("detour_minutes", 0.0) or 0.0),
+                        arrival_soc_percent=float(
+                            s.get("arrival_soc_percent", 0.0) or 0.0
+                        ),
+                        target_soc_percent=float(
+                            s.get("target_soc_percent", 0.0) or 0.0
+                        ),
+                        charge_minutes=float(s.get("charge_minutes", 0.0) or 0.0),
+                        power_kw=float(s.get("power_kw", 0.0) or 0.0),
+                    )
+                )
+            except (TypeError, ValueError):
+                continue
 
         cards.append(
             ProfileCard(
@@ -84,6 +112,7 @@ def _build_profile_cards(profile_result: Dict[str, Any]) -> List[ProfileCard]:
                 final_soc_pct=card.get("arrival_soc_percent"),
                 used_ml=bool(ml_summary.get("used_ml", card.get("used_ml", False))),
                 model_version=ml_summary.get("model_version"),
+                recommended_stops=recommended_stops,
                 raw={
                     "summary": summary,
                     "ml_summary": ml_summary,

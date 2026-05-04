@@ -16,6 +16,7 @@ from app.core.energy_model import Vehicle
 from app.core.route_energy_simulator import RouteEnergySimulator
 from app.core.route_profiles import RouteProfiles
 from app.services.charging_service import OpenChargeMapService
+from app.services.geocoding_service import NominatimGeocodingService
 from app.services.route_context_service import RouteContextService
 from app.services.speed_limit_service import OverpassSpeedLimitService
 from ml.model_service import ModelService
@@ -59,3 +60,7 @@ def get_charging_service(request: Request) -> OpenChargeMapService:
 
 def get_speed_limit_service(request: Request) -> OverpassSpeedLimitService:
     return request.app.state.speed_limit_service
+
+
+def get_geocoding_service(request: Request) -> NominatimGeocodingService:
+    return request.app.state.geocoding_service

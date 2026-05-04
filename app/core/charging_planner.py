@@ -324,9 +324,18 @@ class ChargingPlanner:
             else 80.0
         )
 
-        # Sapasiteye gore ulasilabilir maksimum mesafe (reserve uzeri kullanilabilir SOC)
-        soc_buffer = 2.0  # istasyona varisinda guvenli marj
-        max_target_soc = 80.0
+        # Strateji bazli ayarlar — fast/efficient/balanced farkli sonuclar uretsin diye
+        if strategy == "fast":
+            # En kisa toplam sure: yuksek guc istasyonlari, kucuk marj
+            soc_buffer = 1.5
+            max_target_soc = 75.0
+        elif strategy == "efficient":
+            # En dusuk enerji/sapma: dusuk sapmali istasyonlar, daha tutucu marj
+            soc_buffer = 3.0
+            max_target_soc = 70.0
+        else:  # balanced
+            soc_buffer = 2.0
+            max_target_soc = 80.0
         max_stops = 5
 
         stops: List[Dict[str, Any]] = []
@@ -365,10 +374,26 @@ class ChargingPlanner:
             if not candidates:
                 return None  # cok durakli plan da kuramiyoruz
 
-            # En uzak ve en guclu istasyonu sec
-            candidates.sort(
-                key=lambda s: (-s["distance_along_route_km"], -s["power_kw"])
-            )
+            # Stratejiye gore istasyon secimi
+            if strategy == "fast":
+                # En yuksek guc → en hizli sarj; esitlikte en uzak
+                candidates.sort(
+                    key=lambda s: (-s["power_kw"], -s["distance_along_route_km"])
+                )
+            elif strategy == "efficient":
+                # En dusuk sapma (rotaya yakin) → ek mesafe minimum;
+                # esitlikte en uzak ki durak sayisi azalsin
+                candidates.sort(
+                    key=lambda s: (
+                        s.get("detour_distance_km", 0.0),
+                        -s["distance_along_route_km"],
+                    )
+                )
+            else:  # balanced
+                # En uzaktan basla, esitlikte en gucluyu sec
+                candidates.sort(
+                    key=lambda s: (-s["distance_along_route_km"], -s["power_kw"])
+                )
             selected = candidates[0]
 
             leg_km = selected["distance_along_route_km"] - current_distance

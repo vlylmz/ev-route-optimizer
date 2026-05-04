@@ -2,11 +2,22 @@ import { useEffect, useMemo, useState } from 'react'
 import { RouteForm } from './components/RouteForm'
 import { MapView } from './components/MapView'
 import { ReportPanel } from './components/ReportPanel'
+import {
+  ReservationDialog,
+  type Reservation,
+} from './components/ReservationDialog'
 import { useVehicles } from './hooks/useVehicles'
 import { useOptimize } from './hooks/useOptimize'
 import { useRoute } from './hooks/useRoute'
 import { useSpeedLimits } from './hooks/useSpeedLimits'
-import type { OptimizeRequest } from './services/schemas'
+import type {
+  OptimizeRequest,
+  RecommendedStop,
+} from './services/schemas'
+
+function reservationKey(strategyKey: string, idx: number): string {
+  return `${strategyKey}::${idx}`
+}
 
 function App() {
   const vehiclesQ = useVehicles()
@@ -18,8 +29,18 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [navMode, setNavMode] = useState(false)
 
+  // Rezervasyon state'i: key = "<strategy>::<stopIdx>"
+  const [reservations, setReservations] = useState<Record<string, Reservation>>(
+    {},
+  )
+  const [activeReservation, setActiveReservation] = useState<{
+    key: string
+    stop: RecommendedStop
+  } | null>(null)
+
   const handleSubmit = (req: OptimizeRequest) => {
     setSubmitted(req)
+    setReservations({}) // yeni rota → eski rezervasyonları temizle
     optimizeM.mutate(req)
     routeM.mutate({ start: req.start, end: req.end })
   }
@@ -49,6 +70,32 @@ function App() {
     setSidebarOpen(true)
   }
 
+  const handleReserve = (
+    strategyKey: string,
+    stopIdx: number,
+    stop: RecommendedStop,
+  ) => {
+    setActiveReservation({ key: reservationKey(strategyKey, stopIdx), stop })
+  }
+
+  const handleConfirmReservation = (r: Reservation) => {
+    if (!activeReservation) return
+    setReservations((prev) => ({ ...prev, [activeReservation.key]: r }))
+    setActiveReservation(null)
+  }
+
+  const handleCancelReservation = () => {
+    if (!activeReservation) return
+    setReservations((prev) => {
+      const next = { ...prev }
+      delete next[activeReservation.key]
+      return next
+    })
+    setActiveReservation(null)
+  }
+
+  const reservationCount = Object.keys(reservations).length
+
   return (
     <div className="fixed inset-0 overflow-hidden bg-slate-900">
       {/* Tam ekran harita */}
@@ -69,6 +116,11 @@ function App() {
         >
           <span className="text-lg leading-none">☰</span>
           <span>Menü</span>
+          {reservationCount > 0 && (
+            <span className="rounded-full bg-emerald-500 px-2 py-0.5 text-[10px] font-bold text-white">
+              {reservationCount}
+            </span>
+          )}
         </button>
       )}
 
@@ -82,7 +134,7 @@ function App() {
         </button>
       )}
 
-      {/* Sidebar — yarı saydam, modern tasarım */}
+      {/* Sidebar */}
       {sidebarOpen && (
         <aside className="absolute left-0 top-0 z-20 flex h-full w-full flex-col overflow-y-auto border-r border-white/40 bg-white/80 shadow-2xl backdrop-blur-xl sm:w-[440px]">
           {/* Gradient header */}
@@ -98,7 +150,7 @@ function App() {
                   EV Route Optimizer
                 </h1>
                 <p className="mt-0.5 text-xs text-indigo-100/90">
-                  Rota · Enerji · Şarj Planı · GPS
+                  Rota · Enerji · Şarj Planı · Rezervasyon
                 </p>
               </div>
               <button
@@ -113,7 +165,6 @@ function App() {
 
           {/* İçerik */}
           <div className="flex-1 space-y-5 px-5 py-5">
-            {/* Form section */}
             <Section title="Rota & Araç" icon="📍">
               <RouteForm
                 vehicles={vehiclesQ.data ?? []}
@@ -124,7 +175,6 @@ function App() {
               />
             </Section>
 
-            {/* Durum mesajları */}
             {optimizeM.isPending && (
               <div className="flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50/80 px-3 py-2.5 text-xs text-indigo-700 backdrop-blur">
                 <span className="h-2 w-2 animate-pulse rounded-full bg-indigo-500" />
@@ -139,7 +189,6 @@ function App() {
               </div>
             )}
 
-            {/* Yola çık butonu */}
             {geometry.length >= 2 && (
               <button
                 onClick={handleStartNav}
@@ -153,7 +202,6 @@ function App() {
               </button>
             )}
 
-            {/* Hız limitleri durum bilgisi */}
             {geometry.length >= 2 && (
               <div className="flex items-center justify-between rounded-lg border border-slate-200/70 bg-white/60 px-3 py-2 text-xs text-slate-600 backdrop-blur">
                 <span className="flex items-center gap-2">
@@ -172,14 +220,28 @@ function App() {
               </div>
             )}
 
-            {/* Rapor */}
+            {reservationCount > 0 && (
+              <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50/80 px-3 py-2 text-xs text-emerald-800 backdrop-blur">
+                <span className="flex items-center gap-2">
+                  <span>✓</span>
+                  <span>Aktif rezervasyon</span>
+                </span>
+                <span className="font-bold text-emerald-700">
+                  {reservationCount}
+                </span>
+              </div>
+            )}
+
             {optimizeM.data && (
               <Section title="Sonuç" icon="📊">
-                <ReportPanel result={optimizeM.data} />
+                <ReportPanel
+                  result={optimizeM.data}
+                  reservations={reservations}
+                  onReserve={handleReserve}
+                />
               </Section>
             )}
 
-            {/* Boş durum */}
             {!optimizeM.data && !optimizeM.isPending && (
               <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50/60 p-6 text-center text-xs text-slate-500 backdrop-blur">
                 <span className="text-2xl">⚡</span>
@@ -193,7 +255,6 @@ function App() {
             )}
           </div>
 
-          {/* Footer */}
           <a
             href="http://127.0.0.1:8000/docs"
             target="_blank"
@@ -204,6 +265,17 @@ function App() {
             <span aria-hidden>↗</span>
           </a>
         </aside>
+      )}
+
+      {/* Rezervasyon dialog */}
+      {activeReservation && (
+        <ReservationDialog
+          stop={activeReservation.stop}
+          existingReservation={reservations[activeReservation.key] ?? null}
+          onClose={() => setActiveReservation(null)}
+          onConfirm={handleConfirmReservation}
+          onCancel={handleCancelReservation}
+        />
       )}
     </div>
   )

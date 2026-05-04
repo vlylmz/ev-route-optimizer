@@ -228,6 +228,17 @@ class OptimizeRequest(BaseModel):
         return deduped
 
 
+class RecommendedStop(BaseModel):
+    name: str
+    distance_along_route_km: float
+    detour_distance_km: float = 0.0
+    detour_minutes: float = 0.0
+    arrival_soc_percent: float = 0.0
+    target_soc_percent: float = 0.0
+    charge_minutes: float = 0.0
+    power_kw: float = 0.0
+
+
 class ProfileCard(BaseModel):
     key: StrategyName
     label: str
@@ -239,6 +250,7 @@ class ProfileCard(BaseModel):
     final_soc_pct: Optional[float] = None
     used_ml: bool = False
     model_version: Optional[str] = None
+    recommended_stops: List[RecommendedStop] = Field(default_factory=list)
     raw: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -291,3 +303,23 @@ class SpeedLimitsResponse(BaseModel):
     segments: List[SpeedLimitSegment] = Field(default_factory=list)
     source: str = Field(default="overpass", description="overpass | fallback")
     sampled_point_count: int = 0
+
+
+# =========================================================
+# /geocode
+# =========================================================
+
+
+class GeocodeResultItem(BaseModel):
+    display_name: str
+    name: str
+    lat: float
+    lon: float
+    type: Optional[str] = None
+    importance: float = 0.0
+    country_code: Optional[str] = None
+
+
+class GeocodeResponse(BaseModel):
+    query: str
+    results: List[GeocodeResultItem] = Field(default_factory=list)

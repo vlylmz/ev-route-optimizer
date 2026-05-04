@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.controllers import (
     estimate_router,
+    geocode_router,
     optimize_router,
     route_router,
     speed_limit_router,
@@ -31,6 +32,7 @@ from app.core.energy_model import Vehicle, load_vehicles
 from app.core.route_energy_simulator import RouteEnergySimulator
 from app.core.route_profiles import RouteProfiles
 from app.services.charging_service import OpenChargeMapService
+from app.services.geocoding_service import NominatimGeocodingService
 from app.services.route_context_service import RouteContextService
 from app.services.speed_limit_service import OverpassSpeedLimitService
 from ml.model_service import ModelService
@@ -64,6 +66,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     charging_service = OpenChargeMapService(api_key=ocm_api_key) if ocm_api_key else OpenChargeMapService()
     route_context_service = RouteContextService(charging_service=charging_service)
     speed_limit_service = OverpassSpeedLimitService()
+    geocoding_service = NominatimGeocodingService()
 
     # Core planlama bileşenleri
     route_energy_simulator = RouteEnergySimulator(model_service=model_service)
@@ -86,6 +89,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.charging_planner = charging_planner
     app.state.route_profiles = route_profiles
     app.state.speed_limit_service = speed_limit_service
+    app.state.geocoding_service = geocoding_service
 
     try:
         yield
@@ -147,6 +151,7 @@ def create_app() -> FastAPI:
     app.include_router(estimate_router)
     app.include_router(optimize_router)
     app.include_router(speed_limit_router)
+    app.include_router(geocode_router)
 
     return app
 

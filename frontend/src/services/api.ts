@@ -1,5 +1,6 @@
 import axios, { AxiosError } from 'axios'
 import {
+  GeocodeResponseSchema,
   HealthResponseSchema,
   OptimizeRequestSchema,
   OptimizeResponseSchema,
@@ -7,6 +8,7 @@ import {
   SpeedLimitsResponseSchema,
   VehicleDetailSchema,
   VehicleSummarySchema,
+  type GeocodeResponse,
   type HealthResponse,
   type OptimizeRequest,
   type OptimizeResponse,
@@ -117,6 +119,18 @@ export async function postSpeedLimits(body: {
       sample_every_n_points: body.sample_every_n_points ?? 20,
     })
     return SpeedLimitsResponseSchema.parse(res.data)
+  } catch (err) {
+    rethrow(err)
+  }
+}
+
+export async function getGeocode(
+  q: string,
+  limit = 5,
+): Promise<GeocodeResponse> {
+  try {
+    const res = await api.get('/geocode', { params: { q, limit } })
+    return GeocodeResponseSchema.parse(res.data)
   } catch (err) {
     rethrow(err)
   }
