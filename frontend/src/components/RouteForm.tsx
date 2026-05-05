@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { VehicleSelect } from './VehicleSelect'
 import { LocationSearchInput } from './LocationSearchInput'
 import type {
@@ -12,8 +12,16 @@ interface Props {
   vehicles: VehicleSummary[]
   vehiclesLoading?: boolean
   vehiclesError?: boolean
-  onSubmit: (req: OptimizeRequest) => void
+  onSubmit: (
+    req: OptimizeRequest,
+    extra: { start: GeocodeResultItem; end: GeocodeResultItem },
+  ) => void
   isSubmitting?: boolean
+  presetStart?: GeocodeResultItem | null
+  presetEnd?: GeocodeResultItem | null
+  presetVehicleId?: string | null
+  presetInitialSocPct?: number | null
+  presetTargetArrivalSocPct?: number | null
 }
 
 const DEFAULT_PRESETS: {
@@ -98,12 +106,29 @@ export function RouteForm({
   vehiclesError,
   onSubmit,
   isSubmitting,
+  presetStart,
+  presetEnd,
+  presetVehicleId,
+  presetInitialSocPct,
+  presetTargetArrivalSocPct,
 }: Props) {
   const [vehicleId, setVehicleId] = useState<string>('')
   const [start, setStart] = useState<GeocodeResultItem | null>(null)
   const [end, setEnd] = useState<GeocodeResultItem | null>(null)
   const [initialSoc, setInitialSoc] = useState('80')
   const [targetArrivalSoc, setTargetArrivalSoc] = useState<number>(20)
+
+  // Geçmişten bir rota seçildiğinde formu doldur
+  useEffect(() => {
+    if (presetStart) setStart(presetStart)
+    if (presetEnd) setEnd(presetEnd)
+    if (presetVehicleId) setVehicleId(presetVehicleId)
+    if (presetInitialSocPct != null) setInitialSoc(String(presetInitialSocPct))
+    if (presetTargetArrivalSocPct != null) {
+      setTargetArrivalSoc(presetTargetArrivalSocPct)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presetStart, presetEnd, presetVehicleId, presetInitialSocPct])
   const [strategies, setStrategies] = useState<StrategyName[]>([
     'fast',
     'efficient',
@@ -132,15 +157,18 @@ export function RouteForm({
     e.preventDefault()
     if (!canSubmit || !start || !end) return
 
-    onSubmit({
-      vehicle_id: effectiveVehicleId,
-      start: { lat: start.lat, lon: start.lon },
-      end: { lat: end.lat, lon: end.lon },
-      initial_soc_pct: parseFloat(initialSoc),
-      target_arrival_soc_pct: targetArrivalSoc,
-      strategies,
-      use_ml: useMl,
-    })
+    onSubmit(
+      {
+        vehicle_id: effectiveVehicleId,
+        start: { lat: start.lat, lon: start.lon },
+        end: { lat: end.lat, lon: end.lon },
+        initial_soc_pct: parseFloat(initialSoc),
+        target_arrival_soc_pct: targetArrivalSoc,
+        strategies,
+        use_ml: useMl,
+      },
+      { start, end },
+    )
   }
 
   return (

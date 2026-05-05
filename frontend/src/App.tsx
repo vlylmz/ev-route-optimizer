@@ -4,6 +4,7 @@ import { MapView } from './components/MapView'
 import { ReportPanel } from './components/ReportPanel'
 import { ElevationChart } from './components/ElevationChart'
 import { VehicleCompareModal } from './components/VehicleCompareModal'
+import { RouteHistoryPanel } from './components/RouteHistoryPanel'
 import {
   ReservationDialog,
   type Reservation,
@@ -12,7 +13,9 @@ import { useVehicles } from './hooks/useVehicles'
 import { useOptimize } from './hooks/useOptimize'
 import { useRoute } from './hooks/useRoute'
 import { useSpeedLimits } from './hooks/useSpeedLimits'
+import { useRouteHistory } from './hooks/useRouteHistory'
 import type {
+  GeocodeResultItem,
   OptimizeRequest,
   RecommendedStop,
 } from './services/schemas'
@@ -28,10 +31,22 @@ function App() {
   const speedLimitsM = useSpeedLimits()
 
   const [submitted, setSubmitted] = useState<OptimizeRequest | null>(null)
+  const [submittedNames, setSubmittedNames] = useState<{
+    start: GeocodeResultItem
+    end: GeocodeResultItem
+  } | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [navMode, setNavMode] = useState(false)
   const [activeProfileKey, setActiveProfileKey] = useState<string | null>(null)
   const [compareOpen, setCompareOpen] = useState(false)
+  const [pendingPreset, setPendingPreset] = useState<{
+    start: GeocodeResultItem
+    end: GeocodeResultItem
+    vehicleId: string
+    initialSocPct: number
+    targetArrivalSocPct?: number | null
+  } | null>(null)
+  const history = useRouteHistory()
 
   // Rezervasyon state'i: key = "<strategy>::<stopIdx>"
   const [reservations, setReservations] = useState<Record<string, Reservation>>(
@@ -42,12 +57,46 @@ function App() {
     stop: RecommendedStop
   } | null>(null)
 
-  const handleSubmit = (req: OptimizeRequest) => {
+  const handleSubmit = (
+    req: OptimizeRequest,
+    extra: { start: GeocodeResultItem; end: GeocodeResultItem },
+  ) => {
     setSubmitted(req)
+    setSubmittedNames(extra)
     setReservations({}) // yeni rota → eski rezervasyonları temizle
     setActiveProfileKey(null) // yeni rota → recommended profile otomatik aktif olur
     optimizeM.mutate(req)
     routeM.mutate({ start: req.start, end: req.end })
+  }
+
+  // Optimize sonucu geldikten sonra rotayı geçmişe ekle
+  useEffect(() => {
+    const data = optimizeM.data
+    if (!data || !submittedNames || !submitted) return
+    const cheapest = data.profiles
+      .filter((p) => p.feasible && p.total_cost_try > 0)
+      .sort((a, b) => a.total_cost_try - b.total_cost_try)[0]
+    history.addEntry({
+      vehicleId: submitted.vehicle_id,
+      vehicleName: data.vehicle_name,
+      start: submittedNames.start,
+      end: submittedNames.end,
+      initialSocPct: submitted.initial_soc_pct,
+      targetArrivalSocPct: submitted.target_arrival_soc_pct,
+      totalDistanceKm: data.total_distance_km,
+      totalCostTry: cheapest?.total_cost_try ?? 0,
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [optimizeM.data])
+
+  const handleSelectHistory = (entry: typeof history.entries[number]) => {
+    setPendingPreset({
+      start: entry.start,
+      end: entry.end,
+      vehicleId: entry.vehicleId,
+      initialSocPct: entry.initialSocPct,
+      targetArrivalSocPct: entry.targetArrivalSocPct,
+    })
   }
 
   const geometry = routeM.data?.geometry ?? []
@@ -226,8 +275,24 @@ function App() {
                 vehiclesError={vehiclesQ.isError}
                 onSubmit={handleSubmit}
                 isSubmitting={optimizeM.isPending || routeM.isPending}
+                presetStart={pendingPreset?.start}
+                presetEnd={pendingPreset?.end}
+                presetVehicleId={pendingPreset?.vehicleId}
+                presetInitialSocPct={pendingPreset?.initialSocPct}
+                presetTargetArrivalSocPct={pendingPreset?.targetArrivalSocPct}
               />
             </Section>
+
+            {history.entries.length > 0 && (
+              <Section title="Son Rotalar" icon="🕓">
+                <RouteHistoryPanel
+                  entries={history.entries}
+                  onSelect={handleSelectHistory}
+                  onRemove={history.removeEntry}
+                  onClearAll={history.clearAll}
+                />
+              </Section>
+            )}
 
             {optimizeM.isPending && (
               <div className="flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50/80 px-3 py-2.5 text-xs text-indigo-700 backdrop-blur">
