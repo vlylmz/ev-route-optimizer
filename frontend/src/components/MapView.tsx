@@ -336,6 +336,7 @@ export function MapView({
     const totalKm = cumulativeDistances[cumulativeDistances.length - 1] || 0
     if (totalKm <= 0) return
     const clamped = Math.max(0, Math.min(simKm, totalKm))
+    // Hangi segmentteyiz?
     let idx = 0
     for (let i = 0; i < cumulativeDistances.length - 1; i++) {
       if (cumulativeDistances[i + 1] >= clamped) {
@@ -354,10 +355,21 @@ export function MapView({
       geometry[idx][1] +
       (geometry[Math.min(idx + 1, geometry.length - 1)][1] - geometry[idx][1]) * t
     setPos({ lat, lon })
-    const ahead = Math.min(idx + 1, geometry.length - 1)
-    if (ahead !== idx) {
+
+    // Heading: tek segment titriyor — birkaç (yaklasik 200m) ileri bak,
+    // ortalama bearing = daha duzgun rotasyon.
+    const targetKm = Math.min(clamped + 0.2, totalKm)
+    let aheadIdx = idx
+    for (let i = idx; i < cumulativeDistances.length; i++) {
+      if (cumulativeDistances[i] >= targetKm) {
+        aheadIdx = i
+        break
+      }
+      aheadIdx = i
+    }
+    if (aheadIdx > idx) {
       setHeading(
-        bearingDeg(geometry[idx][0], geometry[idx][1], geometry[ahead][0], geometry[ahead][1]),
+        bearingDeg(lat, lon, geometry[aheadIdx][0], geometry[aheadIdx][1]),
       )
     }
   }, [simKm, simEnabled, hasRoute, cumulativeDistances, geometry])
@@ -388,20 +400,34 @@ export function MapView({
 
   // Follow mode — haritayı GPS pozisyonuna kilitle
   // Padding ile aracı ekranın alt 1/3'ünde tutarız (gerçek nav görünümü).
+  // Sim modunda rAF her 16ms tetikledigi icin easeTo cok kisa olmali ki
+  // gecisler ust uste binip yarida kesilmesin.
   useEffect(() => {
     if (!navigationMode || !followMode || !pos || !mapRef.current) return
     const map = mapRef.current.getMap()
     const canvas = map.getCanvas()
     const h = canvas.clientHeight || 700
-    map.easeTo({
-      center: [pos.lon, pos.lat],
-      bearing: heading,
-      pitch,
-      zoom: 17.5,
-      duration: 800,
-      padding: { top: 0, bottom: Math.round(h * 0.55), left: 0, right: 0 },
-    })
-  }, [pos, heading, followMode, pitch, navigationMode])
+    const padding = { top: 0, bottom: Math.round(h * 0.55), left: 0, right: 0 }
+    if (simEnabled) {
+      // Tight follow — aniden yapis, yumusak gecis surekli kesilmesin.
+      map.jumpTo({
+        center: [pos.lon, pos.lat],
+        bearing: heading,
+        pitch,
+        zoom: 17,
+        padding,
+      })
+    } else {
+      map.easeTo({
+        center: [pos.lon, pos.lat],
+        bearing: heading,
+        pitch,
+        zoom: 17.5,
+        duration: 800,
+        padding,
+      })
+    }
+  }, [pos, heading, followMode, pitch, navigationMode, simEnabled])
 
   // Pitch değişince haritaya uygula
   useEffect(() => {
