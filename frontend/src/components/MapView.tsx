@@ -103,6 +103,13 @@ export function MapView({
     null,
   )
 
+  // Simülasyon: rotada otomatik ilerleyen sanal araç
+  const [simEnabled, setSimEnabled] = useState<boolean>(false)
+  const [simRunning, setSimRunning] = useState<boolean>(false)
+  const [simSpeedMul, setSimSpeedMul] = useState<number>(8) // 1x = gerçek hız, 8x demo
+  const [simKm, setSimKm] = useState<number>(0) // şu anki kümülatif km
+  const [simArrived, setSimArrived] = useState<boolean>(false)
+
   const hasRoute = geometry.length > 1
 
   // GeoJSON polyline (lon, lat)
@@ -196,9 +203,10 @@ export function MapView({
   }, [geometry])
 
   // Navigation moduna geçince GPS başlat / kapatınca durdur
+  // Simülasyon açıksa GPS kullanma — pozisyonu sim loop yönetir.
   useEffect(() => {
-    if (!navigationMode) {
-      setPos(null)
+    if (!navigationMode || simEnabled) {
+      if (!simEnabled) setPos(null)
       setGpsError(null)
       return
     }
@@ -238,7 +246,145 @@ export function MapView({
       { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 },
     )
     return () => navigator.geolocation.clearWatch(watchId)
-  }, [navigationMode])
+  }, [navigationMode, simEnabled])
+
+  // Simülasyon animasyon döngüsü
+  // simEnabled açıkken simKm sürekli artar, pozisyon ve heading geometriden
+  // hesaplanarak set edilir.
+  useEffect(() => {
+    if (!navigationMode || !simEnabled || !hasRoute) return
+
+    const totalKm = cumulativeDistances[cumulativeDistances.length - 1] || 0
+    if (totalKm <= 0) return
+
+    // Simülasyon başladığında varış flag'ini sıfırla
+    if (simKm === 0) setSimArrived(false)
+
+    // Pozisyonu mevcut simKm'e göre yerleştir (running olmasa bile)
+    const placeAt = (km: number) => {
+      const clamped = Math.max(0, Math.min(km, totalKm))
+      // Hangi segmentteyiz?
+      let idx = 0
+      for (let i = 0; i < cumulativeDistances.length - 1; i++) {
+        if (cumulativeDistances[i + 1] >= clamped) {
+          idx = i
+          break
+        }
+        idx = i + 1
+      }
+      const segStart = cumulativeDistances[idx]
+      const segEnd = cumulativeDistances[Math.min(idx + 1, geometry.length - 1)]
+      const t = segEnd > segStart ? (clamped - segStart) / (segEnd - segStart) : 0
+      const lat =
+        geometry[idx][0] +
+        (geometry[Math.min(idx + 1, geometry.length - 1)][0] - geometry[idx][0]) * t
+      const lon =
+        geometry[idx][1] +
+        (geometry[Math.min(idx + 1, geometry.length - 1)][1] - geometry[idx][1]) * t
+
+      setPos({ lat, lon })
+      // Heading: bir sonraki noktaya göre
+      const ahead = Math.min(idx + 1, geometry.length - 1)
+      if (ahead !== idx) {
+        setHeading(
+          bearingDeg(geometry[idx][0], geometry[idx][1], geometry[ahead][0], geometry[ahead][1]),
+        )
+      }
+    }
+
+    // İlk yerleştirme
+    placeAt(simKm)
+
+    if (!simRunning) return
+
+    // rAF tabanlı animasyon
+    let raf = 0
+    let lastTs = performance.now()
+    const baseSpeedKmh = 90 // sabit "yol" hızı, sonra speed limit'le çarpılabilir
+    const tick = (now: number) => {
+      const dt = (now - lastTs) / 1000 // saniye
+      lastTs = now
+      const stepKm = (baseSpeedKmh * simSpeedMul * dt) / 3600
+      setSimKm((prev) => {
+        const next = prev + stepKm
+        if (next >= totalKm) {
+          setSimRunning(false)
+          setSimArrived(true)
+          return totalKm
+        }
+        return next
+      })
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [
+    navigationMode,
+    simEnabled,
+    simRunning,
+    simSpeedMul,
+    hasRoute,
+    cumulativeDistances,
+    geometry,
+    // simKm intentionally NOT in deps — değişince loop yeniden kurulmamalı
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ])
+
+  // simKm değişince pozisyonu güncelle (sim duraklasa da harita doğru)
+  useEffect(() => {
+    if (!simEnabled || !hasRoute) return
+    const totalKm = cumulativeDistances[cumulativeDistances.length - 1] || 0
+    if (totalKm <= 0) return
+    const clamped = Math.max(0, Math.min(simKm, totalKm))
+    let idx = 0
+    for (let i = 0; i < cumulativeDistances.length - 1; i++) {
+      if (cumulativeDistances[i + 1] >= clamped) {
+        idx = i
+        break
+      }
+      idx = i + 1
+    }
+    const segStart = cumulativeDistances[idx]
+    const segEnd = cumulativeDistances[Math.min(idx + 1, geometry.length - 1)]
+    const t = segEnd > segStart ? (clamped - segStart) / (segEnd - segStart) : 0
+    const lat =
+      geometry[idx][0] +
+      (geometry[Math.min(idx + 1, geometry.length - 1)][0] - geometry[idx][0]) * t
+    const lon =
+      geometry[idx][1] +
+      (geometry[Math.min(idx + 1, geometry.length - 1)][1] - geometry[idx][1]) * t
+    setPos({ lat, lon })
+    const ahead = Math.min(idx + 1, geometry.length - 1)
+    if (ahead !== idx) {
+      setHeading(
+        bearingDeg(geometry[idx][0], geometry[idx][1], geometry[ahead][0], geometry[ahead][1]),
+      )
+    }
+  }, [simKm, simEnabled, hasRoute, cumulativeDistances, geometry])
+
+  // Sim sıfırla
+  const handleSimReset = () => {
+    setSimKm(0)
+    setSimArrived(false)
+    setSimRunning(false)
+  }
+
+  // Sim aç/kapat
+  const handleSimToggle = () => {
+    if (!simEnabled) {
+      // Aç: GPS kapanır, sim başlangıçtan oynamaya hazır
+      setSimEnabled(true)
+      setSimKm(0)
+      setSimArrived(false)
+      setSimRunning(true)
+    } else {
+      // Kapat: sim durur, GPS geri açılır
+      setSimEnabled(false)
+      setSimRunning(false)
+      setSimKm(0)
+      setSimArrived(false)
+    }
+  }
 
   // Follow mode — haritayı GPS pozisyonuna kilitle
   // Padding ile aracı ekranın alt 1/3'ünde tutarız (gerçek nav görünümü).
@@ -536,6 +682,58 @@ export function MapView({
             >
               {followMode ? 'Takip: AÇIK' : 'Takip: KAPALI'}
             </button>
+
+            <div className="mx-1 h-5 w-px bg-slate-600" />
+
+            {/* Simülasyon kontrolleri */}
+            {!simEnabled ? (
+              <button
+                onClick={handleSimToggle}
+                className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold hover:bg-indigo-500"
+                title="GPS olmadan rotada hareketi simüle et"
+              >
+                ▶ Simüle Et
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={() => setSimRunning((v) => !v)}
+                  className={`rounded-md px-3 py-1.5 text-xs ${
+                    simRunning
+                      ? 'bg-amber-600 hover:bg-amber-500'
+                      : 'bg-emerald-600 hover:bg-emerald-500'
+                  }`}
+                >
+                  {simRunning ? '⏸ Duraklat' : '▶ Oynat'}
+                </button>
+                <select
+                  value={simSpeedMul}
+                  onChange={(e) => setSimSpeedMul(Number(e.target.value))}
+                  className="rounded-md bg-slate-700 px-2 py-1 text-xs text-white"
+                  title="Hız çarpanı (gerçek-saat × N)"
+                >
+                  <option value={1}>1×</option>
+                  <option value={4}>4×</option>
+                  <option value={8}>8×</option>
+                  <option value={16}>16×</option>
+                  <option value={64}>64×</option>
+                </select>
+                <button
+                  onClick={handleSimReset}
+                  className="rounded-md bg-slate-700 px-2 py-1.5 text-xs hover:bg-slate-600"
+                  title="Başa sar"
+                >
+                  ⟲
+                </button>
+                <button
+                  onClick={handleSimToggle}
+                  className="rounded-md bg-red-700 px-2 py-1.5 text-xs hover:bg-red-600"
+                  title="Simülasyondan çık"
+                >
+                  ✕
+                </button>
+              </>
+            )}
           </div>
 
           {gpsError && (
@@ -551,6 +749,47 @@ export function MapView({
               </div>
               <div className="mt-1 rounded bg-slate-900/80 px-2 py-0.5 text-xs font-medium text-white">
                 km/h
+              </div>
+            </div>
+          )}
+
+          {/* Sim varış banner'ı */}
+          {simArrived && (
+            <div className="pointer-events-auto absolute top-20 left-1/2 z-20 -translate-x-1/2 rounded-xl border border-emerald-300 bg-emerald-500/95 px-6 py-4 text-center text-white shadow-2xl backdrop-blur">
+              <div className="text-2xl">🏁</div>
+              <div className="text-base font-bold">Varış noktasına ulaşıldı</div>
+              <div className="text-xs text-emerald-100">
+                Simülasyon tamamlandı. Başa sarmak için ⟲ ya da çıkmak için ✕
+              </div>
+            </div>
+          )}
+
+          {/* Sim aktifken progress göstergesi */}
+          {simEnabled && hasRoute && (
+            <div className="pointer-events-none absolute top-4 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-1 rounded-lg bg-slate-900/85 px-4 py-2 text-white shadow-lg backdrop-blur">
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-slate-300">SİMÜLASYON</span>
+                <span className="rounded bg-indigo-600 px-1.5 py-0.5 text-[10px] font-bold">
+                  {simSpeedMul}×
+                </span>
+              </div>
+              <div className="text-sm font-bold tabular-nums">
+                {simKm.toFixed(1)} /{' '}
+                {(cumulativeDistances[cumulativeDistances.length - 1] || 0).toFixed(0)}{' '}
+                km
+              </div>
+              <div className="h-1 w-48 overflow-hidden rounded-full bg-slate-700">
+                <div
+                  className="h-full bg-emerald-500 transition-all"
+                  style={{
+                    width: `${Math.min(
+                      100,
+                      (simKm /
+                        (cumulativeDistances[cumulativeDistances.length - 1] || 1)) *
+                        100,
+                    )}%`,
+                  }}
+                />
               </div>
             </div>
           )}
