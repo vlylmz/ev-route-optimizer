@@ -3,6 +3,7 @@ import { RouteForm } from './components/RouteForm'
 import { MapView } from './components/MapView'
 import { ReportPanel } from './components/ReportPanel'
 import { ElevationChart } from './components/ElevationChart'
+import { VehicleCompareModal } from './components/VehicleCompareModal'
 import {
   ReservationDialog,
   type Reservation,
@@ -30,6 +31,7 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [navMode, setNavMode] = useState(false)
   const [activeProfileKey, setActiveProfileKey] = useState<string | null>(null)
+  const [compareOpen, setCompareOpen] = useState(false)
 
   // Rezervasyon state'i: key = "<strategy>::<stopIdx>"
   const [reservations, setReservations] = useState<Record<string, Reservation>>(
@@ -308,6 +310,15 @@ function App() {
               </Section>
             )}
 
+            {optimizeM.data && submitted && (
+              <button
+                onClick={() => setCompareOpen(true)}
+                className="w-full rounded-lg border border-violet-200 bg-violet-50/60 py-2.5 text-sm font-semibold text-violet-700 transition hover:bg-violet-100"
+              >
+                🆚 Diğer araçlarla karşılaştır
+              </button>
+            )}
+
             {!optimizeM.data && !optimizeM.isPending && (
               <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50/60 p-6 text-center text-xs text-slate-500 backdrop-blur">
                 <span className="text-2xl">⚡</span>
@@ -341,6 +352,23 @@ function App() {
           onClose={() => setActiveReservation(null)}
           onConfirm={handleConfirmReservation}
           onCancel={handleCancelReservation}
+        />
+      )}
+
+      {/* Araç karşılaştırma modalı */}
+      {compareOpen && submitted && vehiclesQ.data && (
+        <VehicleCompareModal
+          vehicles={vehiclesQ.data}
+          defaultVehicleId={submitted.vehicle_id}
+          start={submitted.start}
+          end={submitted.end}
+          initialSocPct={submitted.initial_soc_pct}
+          targetArrivalSocPct={submitted.target_arrival_soc_pct}
+          strategy={
+            (activeProfileKey as 'fast' | 'efficient' | 'balanced' | null) ??
+            'balanced'
+          }
+          onClose={() => setCompareOpen(false)}
         />
       )}
     </div>

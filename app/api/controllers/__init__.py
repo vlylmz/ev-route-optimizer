@@ -1,3 +1,4 @@
+from app.api.controllers.compare_controller import router as compare_router
 from app.api.controllers.estimate_controller import router as estimate_router
 from app.api.controllers.geocode_controller import router as geocode_router
 from app.api.controllers.optimize_controller import router as optimize_router
@@ -7,6 +8,7 @@ from app.api.controllers.station_controller import router as station_router
 from app.api.controllers.vehicle_controller import router as vehicle_router
 
 __all__ = [
+    "compare_router",
     "estimate_router",
     "geocode_router",
     "optimize_router",

@@ -286,6 +286,44 @@ class OptimizeResponse(BaseModel):
 
 
 # =========================================================
+# /compare-vehicles
+# =========================================================
+
+
+class CompareVehiclesRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    vehicle_ids: List[str] = Field(..., min_length=2, max_length=4)
+    start: Coordinate
+    end: Coordinate
+    initial_soc_pct: float = Field(80.0, ge=0.0, le=100.0)
+    target_arrival_soc_pct: Optional[float] = Field(None, ge=0.0, le=100.0)
+    strategy: StrategyName = "balanced"
+    use_ml: bool = False
+
+
+class VehicleComparisonRow(BaseModel):
+    vehicle_id: str
+    vehicle_name: str
+    feasible: bool
+    total_distance_km: float
+    total_energy_kwh: float
+    total_trip_minutes: float
+    charging_minutes: float
+    stop_count: int
+    final_soc_pct: float
+    total_cost_try: float
+    error: Optional[str] = None
+
+
+class CompareVehiclesResponse(BaseModel):
+    rows: List[VehicleComparisonRow] = Field(default_factory=list)
+    cheapest_vehicle_id: Optional[str] = None
+    fastest_vehicle_id: Optional[str] = None
+    most_efficient_vehicle_id: Optional[str] = None
+
+
+# =========================================================
 # /speed-limits
 # =========================================================
 
