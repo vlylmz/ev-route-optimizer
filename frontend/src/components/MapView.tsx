@@ -112,7 +112,7 @@ export function MapView({
 
   const hasRoute = geometry.length > 1
 
-  // GeoJSON polyline (lon, lat)
+  // GeoJSON polyline (lon, lat) — tek parça (sim kapalıyken)
   const routeGeoJson = useMemo(() => {
     if (!hasRoute) return null
     return {
@@ -140,6 +140,58 @@ export function MapView({
     }
     return arr
   }, [geometry, hasRoute])
+
+  // Sim modunda rota'yı simKm'de "traveled" ve "remaining" olarak böl
+  const splitRoute = useMemo(() => {
+    if (!hasRoute || !simEnabled) return null
+    const totalKm = cumulativeDistances[cumulativeDistances.length - 1] || 0
+    if (totalKm <= 0) return null
+    const clamped = Math.max(0, Math.min(simKm, totalKm))
+
+    // Bölme noktasının segment indeksini bul
+    let idx = 0
+    for (let i = 0; i < cumulativeDistances.length - 1; i++) {
+      if (cumulativeDistances[i + 1] >= clamped) {
+        idx = i
+        break
+      }
+      idx = i + 1
+    }
+    const segStart = cumulativeDistances[idx]
+    const segEnd = cumulativeDistances[Math.min(idx + 1, geometry.length - 1)]
+    const t = segEnd > segStart ? (clamped - segStart) / (segEnd - segStart) : 0
+    const splitLat =
+      geometry[idx][0] +
+      (geometry[Math.min(idx + 1, geometry.length - 1)][0] - geometry[idx][0]) * t
+    const splitLon =
+      geometry[idx][1] +
+      (geometry[Math.min(idx + 1, geometry.length - 1)][1] - geometry[idx][1]) * t
+
+    // Traveled: 0..idx + ara split noktası
+    const traveledCoords: [number, number][] = geometry
+      .slice(0, idx + 1)
+      .map(([lat, lon]) => [lon, lat])
+    traveledCoords.push([splitLon, splitLat])
+
+    // Remaining: split noktası + idx+1..end
+    const remainingCoords: [number, number][] = [[splitLon, splitLat]]
+    for (let i = idx + 1; i < geometry.length; i++) {
+      remainingCoords.push([geometry[i][1], geometry[i][0]])
+    }
+
+    return {
+      traveled: {
+        type: 'Feature' as const,
+        geometry: { type: 'LineString' as const, coordinates: traveledCoords },
+        properties: {},
+      },
+      remaining: {
+        type: 'Feature' as const,
+        geometry: { type: 'LineString' as const, coordinates: remainingCoords },
+        properties: {},
+      },
+    }
+  }, [hasRoute, simEnabled, simKm, cumulativeDistances, geometry])
 
   // Highlighted stop'ları rota üzerinde mesafeye göre yerleştir
   const highlightedPositions = useMemo(() => {
@@ -539,7 +591,8 @@ export function MapView({
       >
         <NavigationControl position="top-right" visualizePitch />
 
-        {routeGeoJson && (
+        {/* Sim aktif değilse: tek parça mavi rota */}
+        {routeGeoJson && !splitRoute && (
           <Source id="route" type="geojson" data={routeGeoJson}>
             <Layer
               id="route-line-bg"
@@ -562,6 +615,47 @@ export function MapView({
               layout={{ 'line-cap': 'round', 'line-join': 'round' }}
             />
           </Source>
+        )}
+
+        {/* Sim aktif: traveled (gri/şeffaf) + remaining (parlak mavi) */}
+        {splitRoute && (
+          <>
+            <Source id="route-traveled" type="geojson" data={splitRoute.traveled}>
+              <Layer
+                id="route-traveled-line"
+                type="line"
+                paint={{
+                  'line-color': '#94a3b8',
+                  'line-width': 4,
+                  'line-opacity': 0.35,
+                  'line-dasharray': [2, 1],
+                }}
+                layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+              />
+            </Source>
+            <Source id="route-remaining" type="geojson" data={splitRoute.remaining}>
+              <Layer
+                id="route-remaining-bg"
+                type="line"
+                paint={{
+                  'line-color': '#0f172a',
+                  'line-width': 9,
+                  'line-opacity': 0.55,
+                }}
+                layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+              />
+              <Layer
+                id="route-remaining-line"
+                type="line"
+                paint={{
+                  'line-color': '#4f46e5',
+                  'line-width': 6,
+                  'line-opacity': 1,
+                }}
+                layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+              />
+            </Source>
+          </>
         )}
 
         {start && (
@@ -654,8 +748,17 @@ export function MapView({
 
         {pos && (
           <Marker longitude={pos.lon} latitude={pos.lat} anchor="center">
+            {/*
+              followMode'da harita zaten heading'e döner (heading=ekran-yukari).
+              Bu durumda ok yon olarak yukari bakar (rotate 0).
+              Follow kapalıyken harita kuzeye sabittir; ok heading kadar dönmeli.
+            */}
             <div
-              style={{ transform: `rotate(${heading}deg)` }}
+              style={{
+                transform: `rotate(${
+                  followMode && navigationMode ? 0 : heading
+                }deg)`,
+              }}
               className="transition-transform"
             >
               <svg width="36" height="36" viewBox="0 0 36 36">
