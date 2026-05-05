@@ -48,6 +48,22 @@ export function ReportPanel({
         </div>
       </div>
 
+      {/* Maliyet karşılaştırma kuşağı */}
+      {profiles.some((p) => p.total_cost_try > 0) && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50/70 px-3 py-2 backdrop-blur">
+          <span className="text-base">💰</span>
+          <div className="flex-1 text-[11px] text-amber-900">
+            <div className="font-semibold">Tahmini şarj maliyeti</div>
+            <div className="text-amber-700">
+              {profiles
+                .filter((p) => p.feasible && p.total_cost_try > 0)
+                .map((p) => `${p.label}: ${p.total_cost_try.toFixed(0)}₺`)
+                .join(' · ')}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col gap-3">
         {profiles.map((p) => (
           <ProfileCard

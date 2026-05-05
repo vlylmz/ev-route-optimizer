@@ -239,6 +239,7 @@ class OptimizeRequest(BaseModel):
 
 class RecommendedStop(BaseModel):
     name: str
+    operator: Optional[str] = None
     distance_along_route_km: float
     detour_distance_km: float = 0.0
     detour_minutes: float = 0.0
@@ -246,6 +247,9 @@ class RecommendedStop(BaseModel):
     target_soc_percent: float = 0.0
     charge_minutes: float = 0.0
     power_kw: float = 0.0
+    is_dc: bool = True
+    energy_kwh: float = 0.0
+    cost_try: float = 0.0
 
 
 class ProfileCard(BaseModel):
@@ -260,6 +264,7 @@ class ProfileCard(BaseModel):
     used_ml: bool = False
     model_version: Optional[str] = None
     recommended_stops: List[RecommendedStop] = Field(default_factory=list)
+    total_cost_try: float = 0.0
     raw: Dict[str, Any] = Field(default_factory=dict)
 
 

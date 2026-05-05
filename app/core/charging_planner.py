@@ -226,6 +226,7 @@ class ChargingPlanner:
 
         stop = {
             "name": station_name,
+            "operator": _pick(selected_station, "operator"),
             "distance_along_route_km": round(distance_along_route_km, 2),
             "detour_distance_km": round(detour_distance_km, 2),
             "detour_minutes": round(detour_minutes, 1),
@@ -233,6 +234,7 @@ class ChargingPlanner:
             "target_soc_percent": round(target_soc_percent, 2),
             "charge_minutes": round(charge_minutes, 1),
             "power_kw": round(station_power_kw, 1),
+            "is_dc": station_power_kw >= 50.0,
         }
 
         single_stop_result: Dict[str, Any] = {
@@ -454,6 +456,7 @@ class ChargingPlanner:
             stops.append(
                 {
                     "name": selected.get("name", "İstasyon"),
+                    "operator": selected.get("operator"),
                     "distance_along_route_km": round(
                         selected["distance_along_route_km"], 2
                     ),
@@ -463,6 +466,7 @@ class ChargingPlanner:
                     "target_soc_percent": round(target_soc, 2),
                     "charge_minutes": round(charge_minutes, 1),
                     "power_kw": round(station_power_kw, 1),
+                    "is_dc": station_power_kw >= 50.0,
                 }
             )
 

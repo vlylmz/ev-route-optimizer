@@ -56,6 +56,7 @@ export type StrategyName = z.infer<typeof StrategyNameSchema>
 
 export const RecommendedStopSchema = z.object({
   name: z.string(),
+  operator: z.string().nullable().optional(),
   distance_along_route_km: z.number(),
   detour_distance_km: z.number().default(0),
   detour_minutes: z.number().default(0),
@@ -63,6 +64,9 @@ export const RecommendedStopSchema = z.object({
   target_soc_percent: z.number().default(0),
   charge_minutes: z.number().default(0),
   power_kw: z.number().default(0),
+  is_dc: z.boolean().default(true),
+  energy_kwh: z.number().default(0),
+  cost_try: z.number().default(0),
 })
 export type RecommendedStop = z.infer<typeof RecommendedStopSchema>
 
@@ -78,6 +82,7 @@ export const ProfileCardSchema = z.object({
   used_ml: z.boolean(),
   model_version: z.string().nullable().optional(),
   recommended_stops: z.array(RecommendedStopSchema).default([]),
+  total_cost_try: z.number().default(0),
   raw: z.record(z.string(), z.unknown()).default({}),
 })
 export type ProfileCard = z.infer<typeof ProfileCardSchema>

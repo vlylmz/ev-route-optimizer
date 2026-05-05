@@ -72,8 +72,20 @@ export function ProfileCard({
       >
         <span className="text-xl">{STRATEGY_EMOJI[card.key] ?? '•'}</span>
         <div className="flex-1">
-          <h3 className="text-base font-semibold text-slate-900">
-            {card.label}
+          <h3 className="flex items-center gap-1.5 text-base font-semibold text-slate-900">
+            <span>{card.label}</span>
+            <span
+              className={
+                'rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ' +
+                (card.used_ml
+                  ? 'bg-indigo-100 text-indigo-700'
+                  : 'bg-slate-100 text-slate-600')
+              }
+            >
+              {card.used_ml
+                ? `ML${card.model_version ? ` · ${card.model_version}` : ''}`
+                : 'Formül'}
+            </span>
           </h3>
           <p className="text-xs text-slate-500">
             {card.feasible ? 'Uygulanabilir' : 'Uygun değil'}
@@ -93,7 +105,15 @@ export function ProfileCard({
           value={card.stop_count != null ? String(card.stop_count) : '—'}
         />
         <Stat label="Varış" value={fmt(card.final_soc_pct, '%', 0)} />
-        <Stat label="Kaynak" value={card.used_ml ? 'ML' : 'Formül'} />
+        <Stat
+          label="Maliyet"
+          value={
+            card.total_cost_try > 0
+              ? `${card.total_cost_try.toFixed(0)} ₺`
+              : '—'
+          }
+          highlight={card.total_cost_try > 0}
+        />
       </dl>
 
       {/* Rezervasyon yapılabilir duraklar */}
@@ -124,7 +144,13 @@ export function ProfileCard({
                   <span className="text-[10px] text-slate-500">
                     {s.distance_along_route_km.toFixed(0)} km · {s.power_kw} kW
                     · ~{s.charge_minutes.toFixed(0)} dk
+                    {s.operator && ` · ${s.operator}`}
                   </span>
+                  {s.cost_try > 0 && (
+                    <span className="text-[10px] font-semibold text-amber-700">
+                      💰 {s.energy_kwh.toFixed(1)} kWh · {s.cost_try.toFixed(0)} ₺
+                    </span>
+                  )}
                 </div>
                 {reserved ? (
                   <span className="rounded bg-emerald-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
@@ -144,13 +170,35 @@ export function ProfileCard({
   )
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({
+  label,
+  value,
+  highlight,
+}: {
+  label: string
+  value: string
+  highlight?: boolean
+}) {
   return (
-    <div className="rounded-md bg-slate-50/80 px-2 py-1.5">
+    <div
+      className={
+        'rounded-md px-2 py-1.5 ' +
+        (highlight
+          ? 'bg-amber-50 ring-1 ring-amber-200'
+          : 'bg-slate-50/80')
+      }
+    >
       <div className="text-[10px] uppercase tracking-wider text-slate-500">
         {label}
       </div>
-      <div className="text-sm font-semibold text-slate-900">{value}</div>
+      <div
+        className={
+          'text-sm font-semibold ' +
+          (highlight ? 'text-amber-700' : 'text-slate-900')
+        }
+      >
+        {value}
+      </div>
     </div>
   )
 }

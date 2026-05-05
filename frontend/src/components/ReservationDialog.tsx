@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 export interface RecommendedStop {
   name: string
+  operator?: string | null
   distance_along_route_km: number
   detour_distance_km?: number
   detour_minutes?: number
@@ -9,6 +10,8 @@ export interface RecommendedStop {
   target_soc_percent: number
   charge_minutes: number
   power_kw: number
+  energy_kwh?: number
+  cost_try?: number
 }
 
 export interface Reservation {
@@ -168,6 +171,24 @@ export function ReservationDialog({
               ({stop.power_kw} kW × {duration} dk × ~85% verim)
             </span>
           </div>
+
+          {/* Tahmini ücret */}
+          {stop.cost_try != null && stop.cost_try > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs text-amber-900">
+              💰 Tahmini ücret:{' '}
+              <span className="font-bold text-base">
+                {(
+                  ((duration / 60) * stop.power_kw * 0.85) /
+                  Math.max(stop.energy_kwh ?? 1, 0.01)
+                  * stop.cost_try
+                ).toFixed(0)}{' '}
+                ₺
+              </span>
+              {stop.operator && (
+                <span className="ml-2 text-amber-700">— {stop.operator} tarifesi</span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Footer */}

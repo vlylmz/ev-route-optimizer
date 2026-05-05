@@ -1,0 +1,24 @@
+{
+  "version": "2025-Q1",
+  "currency": "TRY",
+  "notes": "Operatorlerin halka acik standart tarifeleri (yaklasik). Uyelik / ozel paket fiyatlari farkli olabilir.",
+  "default_dc_try_per_kwh": 11.0,
+  "default_ac_try_per_kwh": 8.0,
+  "operators": {
+    "ZES": { "dc_try_per_kwh": 11.5, "ac_try_per_kwh": 8.5 },
+    "Trugo": { "dc_try_per_kwh": 10.9, "ac_try_per_kwh": 8.0 },
+    "Eşarj": { "dc_try_per_kwh": 11.0, "ac_try_per_kwh": 8.5 },
+    "Esarj": { "dc_try_per_kwh": 11.0, "ac_try_per_kwh": 8.5 },
+    "SHARZ": { "dc_try_per_kwh": 10.5, "ac_try_per_kwh": 7.9 },
+    "Sharz": { "dc_try_per_kwh": 10.5, "ac_try_per_kwh": 7.9 },
+    "Astor Enerji": { "dc_try_per_kwh": 9.9, "ac_try_per_kwh": 7.5 },
+    "VOLTRUN": { "dc_try_per_kwh": 10.2, "ac_try_per_kwh": 7.5 },
+    "Tesla": { "dc_try_per_kwh": 9.8, "ac_try_per_kwh": 7.5 },
+    "Tesla, Inc.": { "dc_try_per_kwh": 9.8, "ac_try_per_kwh": 7.5 },
+    "TOGG": { "dc_try_per_kwh": 9.5, "ac_try_per_kwh": 7.0 },
+    "EVAN": { "dc_try_per_kwh": 10.0, "ac_try_per_kwh": 7.5 },
+    "WAT Mobilite": { "dc_try_per_kwh": 10.5, "ac_try_per_kwh": 7.8 },
+    "Team Energy": { "dc_try_per_kwh": 10.0, "ac_try_per_kwh": 7.5 },
+    "OSM": { "dc_try_per_kwh": 11.0, "ac_try_per_kwh": 8.0 }
+  }
+}

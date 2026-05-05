@@ -35,6 +35,7 @@ from app.services.charging_service import OpenChargeMapService
 from app.services.geocoding_service import NominatimGeocodingService
 from app.services.route_context_service import RouteContextService
 from app.services.speed_limit_service import OverpassSpeedLimitService
+from app.services.tariff_service import TariffService
 from ml.model_service import ModelService
 
 
@@ -67,6 +68,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     route_context_service = RouteContextService(charging_service=charging_service)
     speed_limit_service = OverpassSpeedLimitService()
     geocoding_service = NominatimGeocodingService()
+    tariff_service = TariffService()
 
     # Core planlama bileşenleri
     route_energy_simulator = RouteEnergySimulator(model_service=model_service)
@@ -90,6 +92,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.route_profiles = route_profiles
     app.state.speed_limit_service = speed_limit_service
     app.state.geocoding_service = geocoding_service
+    app.state.tariff_service = tariff_service
 
     try:
         yield

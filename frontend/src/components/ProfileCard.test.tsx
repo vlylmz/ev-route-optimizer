@@ -15,6 +15,7 @@ const baseCard: ProfileCardType = {
   used_ml: false,
   model_version: null,
   recommended_stops: [],
+  total_cost_try: 0,
   raw: {},
 }
 
@@ -38,7 +39,8 @@ describe('ProfileCard', () => {
         card={{ ...baseCard, used_ml: true, model_version: 'lgbm_v1' }}
       />,
     )
-    expect(screen.getByText('ML')).toBeInTheDocument()
+    expect(screen.getByText(/ML/)).toBeInTheDocument()
+    expect(screen.getByText(/lgbm_v1/)).toBeInTheDocument()
   })
 
   it('shows dash for missing values', () => {

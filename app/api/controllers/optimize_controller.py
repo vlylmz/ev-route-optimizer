@@ -19,8 +19,10 @@ from app.api.dependencies import (
     get_route_context_service,
     get_route_energy_simulator,
     get_route_profiles,
+    get_tariff_service,
     get_vehicles_lookup,
 )
+from app.services.tariff_service import TariffService
 from app.api.schemas import (
     OptimizeRequest,
     OptimizeResponse,
@@ -62,7 +64,12 @@ def _vehicle_to_dict(vehicle: Vehicle) -> Dict[str, Any]:
     }
 
 
-def _build_profile_cards(profile_result: Dict[str, Any]) -> List[ProfileCard]:
+def _build_profile_cards(
+    profile_result: Dict[str, Any],
+    *,
+    usable_battery_kwh: float,
+    tariff: TariffService,
+) -> List[ProfileCard]:
     cards: List[ProfileCard] = []
     raw_cards = profile_result.get("profile_cards") or []
     profiles = profile_result.get("profiles") or {}
@@ -75,11 +82,29 @@ def _build_profile_cards(profile_result: Dict[str, Any]) -> List[ProfileCard]:
         stops_raw = profile.get("recommended_stops") or []
 
         recommended_stops: List[RecommendedStop] = []
+        total_cost_try = 0.0
         for s in stops_raw:
             try:
+                arrival = float(s.get("arrival_soc_percent", 0.0) or 0.0)
+                target = float(s.get("target_soc_percent", 0.0) or 0.0)
+                power_kw = float(s.get("power_kw", 0.0) or 0.0)
+                operator = s.get("operator")
+                is_dc = bool(s.get("is_dc", power_kw >= 50.0))
+
+                # Tahmini eklenen enerji (durakta + transfer kayıpları için ~85% verim)
+                soc_delta = max(target - arrival, 0.0)
+                energy_kwh = round(
+                    soc_delta / 100.0 * usable_battery_kwh / 0.85, 2
+                )
+                cost_try = tariff.estimate_stop_cost(
+                    operator=operator, kwh=energy_kwh, is_dc=is_dc
+                )
+                total_cost_try += cost_try
+
                 recommended_stops.append(
                     RecommendedStop(
                         name=str(s.get("name", "İstasyon")),
+                        operator=operator,
                         distance_along_route_km=float(
                             s.get("distance_along_route_km", 0.0) or 0.0
                         ),
@@ -87,14 +112,13 @@ def _build_profile_cards(profile_result: Dict[str, Any]) -> List[ProfileCard]:
                             s.get("detour_distance_km", 0.0) or 0.0
                         ),
                         detour_minutes=float(s.get("detour_minutes", 0.0) or 0.0),
-                        arrival_soc_percent=float(
-                            s.get("arrival_soc_percent", 0.0) or 0.0
-                        ),
-                        target_soc_percent=float(
-                            s.get("target_soc_percent", 0.0) or 0.0
-                        ),
+                        arrival_soc_percent=arrival,
+                        target_soc_percent=target,
                         charge_minutes=float(s.get("charge_minutes", 0.0) or 0.0),
-                        power_kw=float(s.get("power_kw", 0.0) or 0.0),
+                        power_kw=power_kw,
+                        is_dc=is_dc,
+                        energy_kwh=energy_kwh,
+                        cost_try=cost_try,
                     )
                 )
             except (TypeError, ValueError):
@@ -113,6 +137,7 @@ def _build_profile_cards(profile_result: Dict[str, Any]) -> List[ProfileCard]:
                 used_ml=bool(ml_summary.get("used_ml", card.get("used_ml", False))),
                 model_version=ml_summary.get("model_version"),
                 recommended_stops=recommended_stops,
+                total_cost_try=round(total_cost_try, 2),
                 raw={
                     "summary": summary,
                     "ml_summary": ml_summary,
@@ -139,6 +164,7 @@ def optimize_route(
     simulator: RouteEnergySimulator = Depends(get_route_energy_simulator),
     analyzer: ChargeNeedAnalyzer = Depends(get_charge_need_analyzer),
     profiles_engine: RouteProfiles = Depends(get_route_profiles),
+    tariff: TariffService = Depends(get_tariff_service),
 ) -> OptimizeResponse:
     vehicle = vehicles.get(req.vehicle_id)
     if vehicle is None:
@@ -221,7 +247,11 @@ def optimize_route(
             detail=f"Profile generation failed: {exc}",
         ) from exc
 
-    cards = _build_profile_cards(profile_result)
+    cards = _build_profile_cards(
+        profile_result,
+        usable_battery_kwh=float(vehicle.usable_battery_kwh),
+        tariff=tariff,
+    )
 
     return OptimizeResponse(
         status=str(profile_result.get("status", "unknown")),

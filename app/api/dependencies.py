@@ -19,6 +19,7 @@ from app.services.charging_service import OpenChargeMapService
 from app.services.geocoding_service import NominatimGeocodingService
 from app.services.route_context_service import RouteContextService
 from app.services.speed_limit_service import OverpassSpeedLimitService
+from app.services.tariff_service import TariffService
 from ml.model_service import ModelService
 
 
@@ -64,3 +65,7 @@ def get_speed_limit_service(request: Request) -> OverpassSpeedLimitService:
 
 def get_geocoding_service(request: Request) -> NominatimGeocodingService:
     return request.app.state.geocoding_service
+
+
+def get_tariff_service(request: Request) -> TariffService:
+    return request.app.state.tariff_service
