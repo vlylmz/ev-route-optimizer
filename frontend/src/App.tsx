@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { RouteForm } from './components/RouteForm'
 import { MapView } from './components/MapView'
 import { ReportPanel } from './components/ReportPanel'
+import { ElevationChart } from './components/ElevationChart'
 import {
   ReservationDialog,
   type Reservation,
@@ -71,6 +72,24 @@ function App() {
       )
     }
   }, [optimizeM.data, activeProfileKey])
+
+  // Yükseklik profili (route response'tan)
+  const elevationProfile = useMemo(() => {
+    const raw = (routeM.data?.elevation_profile ?? []) as Array<{
+      cumulative_distance_km?: number
+      elevation_m?: number
+    }>
+    return raw
+      .filter(
+        (p) =>
+          typeof p.cumulative_distance_km === 'number' &&
+          typeof p.elevation_m === 'number',
+      )
+      .map((p) => ({
+        cumulative_distance_km: p.cumulative_distance_km!,
+        elevation_m: p.elevation_m!,
+      }))
+  }, [routeM.data])
 
   // Aktif profilin durakları (haritada vurgulanacak)
   const activeProfileStops = useMemo(() => {
@@ -263,6 +282,18 @@ function App() {
                   {reservationCount}
                 </span>
               </div>
+            )}
+
+            {optimizeM.data && elevationProfile.length >= 2 && (
+              <Section title="Yükseklik Profili" icon="⛰️">
+                <ElevationChart
+                  profile={elevationProfile}
+                  highlightedStops={activeProfileStops.map((s) => ({
+                    distance_along_route_km: s.distance_along_route_km,
+                    name: s.name,
+                  }))}
+                />
+              </Section>
             )}
 
             {optimizeM.data && (
