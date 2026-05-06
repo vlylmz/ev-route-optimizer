@@ -521,6 +521,34 @@ export function MapView({
       ? speedLimits[currentSegmentIdx]?.maxspeed_kmh ?? null
       : null
 
+  // Varışa kalan ROAD mesafesi (sim modunda total - simKm,
+  // GPS modunda pozisyonun rota üzerindeki projeksiyonundan kalan)
+  const remainingRoadKm = useMemo(() => {
+    if (!hasRoute) return null
+    const totalKm = cumulativeDistances[cumulativeDistances.length - 1] || 0
+    if (totalKm <= 0) return null
+
+    if (simEnabled) {
+      return Math.max(0, totalKm - simKm)
+    }
+    if (!pos) return null
+    // En yakın geometry noktasını bul, oradaki cumulative_km'i kullan
+    let bestIdx = 0
+    let bestDist = Infinity
+    for (let i = 0; i < geometry.length; i++) {
+      const d = haversineKm(pos.lat, pos.lon, geometry[i][0], geometry[i][1])
+      if (d < bestDist) {
+        bestDist = d
+        bestIdx = i
+      }
+    }
+    // Rota'dan çok uzaksa (>2 km) road-distance güvenilmez, haversine'e düş
+    if (bestDist > 2.0 && end) {
+      return haversineKm(pos.lat, pos.lon, end.lat, end.lon)
+    }
+    return Math.max(0, totalKm - cumulativeDistances[bestIdx])
+  }, [hasRoute, cumulativeDistances, geometry, simEnabled, simKm, pos, end])
+
   // 3D bina extrusion layer ekle (openfreemap liberty stilinde 'building' source layer var)
   const handleMapLoad = () => {
     const map = mapRef.current?.getMap()
@@ -939,11 +967,11 @@ export function MapView({
             </div>
           )}
 
-          {pos && end && (
+          {remainingRoadKm != null && (
             <div className="absolute bottom-6 right-6 z-10 rounded-xl bg-slate-900/85 px-4 py-3 text-white shadow-lg">
               <div className="text-xs text-slate-400">Varışa kalan</div>
               <div className="text-2xl font-bold tabular-nums">
-                {haversineKm(pos.lat, pos.lon, end.lat, end.lon).toFixed(1)} km
+                {remainingRoadKm.toFixed(1)} km
               </div>
             </div>
           )}
