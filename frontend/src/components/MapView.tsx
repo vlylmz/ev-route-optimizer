@@ -9,6 +9,9 @@ import Map, {
 } from 'react-map-gl/maplibre'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
+import { useQuery } from '@tanstack/react-query'
+import { postChargingCurve } from '../services/api'
+import { ChargingCurveChart } from './ChargingCurveChart'
 
 interface Station {
   ocm_id?: number
@@ -32,6 +35,8 @@ interface HighlightedStop {
   distance_along_route_km: number
   power_kw?: number
   charge_minutes?: number
+  arrival_soc_percent?: number
+  target_soc_percent?: number
   reserved?: boolean
 }
 
@@ -43,6 +48,7 @@ interface Props {
   navigationMode?: boolean
   speedLimits?: SpeedLimitSegment[]
   highlightedStops?: HighlightedStop[]
+  vehicleId?: string
 }
 
 const MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty'
@@ -91,6 +97,7 @@ export function MapView({
   navigationMode = false,
   speedLimits,
   highlightedStops = [],
+  vehicleId,
 }: Props) {
   const mapRef = useRef<MapRef | null>(null)
   const [pos, setPos] = useState<{ lat: number; lon: number } | null>(null)
@@ -109,6 +116,9 @@ export function MapView({
   const [simSpeedMul, setSimSpeedMul] = useState<number>(8) // 1x = gerçek hız, 8x demo
   const [simKm, setSimKm] = useState<number>(0) // şu anki kümülatif km
   const [simArrived, setSimArrived] = useState<boolean>(false)
+  // Sim'de durağa ulaşıldığında "şarj olunuyor" paneli için durum
+  const [chargingStopIdx, setChargingStopIdx] = useState<number | null>(null)
+  const [completedStops, setCompletedStops] = useState<Set<number>>(new Set())
 
   const hasRoute = geometry.length > 1
 
@@ -426,11 +436,38 @@ export function MapView({
     }
   }, [simKm, simEnabled, hasRoute, cumulativeDistances, geometry])
 
+  // Sim ilerlerken bir şarj durağına ulaşılınca otomatik dur ve panel aç
+  useEffect(() => {
+    if (!simEnabled || !simRunning) return
+    if (chargingStopIdx != null) return
+    if (highlightedStops.length === 0) return
+
+    for (let i = 0; i < highlightedStops.length; i++) {
+      if (completedStops.has(i)) continue
+      const stop = highlightedStops[i]
+      // Aracın stop noktasını geçtiyse (ya da çok yakınındaysa) tetikle
+      if (simKm >= stop.distance_along_route_km - 0.3) {
+        setChargingStopIdx(i)
+        setSimRunning(false)
+        break
+      }
+    }
+  }, [simKm, simEnabled, simRunning, highlightedStops, completedStops, chargingStopIdx])
+
+  const handleChargingDone = () => {
+    if (chargingStopIdx == null) return
+    setCompletedStops((prev) => new Set(prev).add(chargingStopIdx))
+    setChargingStopIdx(null)
+    setSimRunning(true)
+  }
+
   // Sim sıfırla
   const handleSimReset = () => {
     setSimKm(0)
     setSimArrived(false)
     setSimRunning(false)
+    setChargingStopIdx(null)
+    setCompletedStops(new Set())
   }
 
   // Sim aç/kapat
@@ -441,12 +478,16 @@ export function MapView({
       setSimKm(0)
       setSimArrived(false)
       setSimRunning(true)
+      setChargingStopIdx(null)
+      setCompletedStops(new Set())
     } else {
       // Kapat: sim durur, GPS geri açılır
       setSimEnabled(false)
       setSimRunning(false)
       setSimKm(0)
       setSimArrived(false)
+      setChargingStopIdx(null)
+      setCompletedStops(new Set())
     }
   }
 
@@ -520,6 +561,34 @@ export function MapView({
     currentSegmentIdx != null && speedLimits
       ? speedLimits[currentSegmentIdx]?.maxspeed_kmh ?? null
       : null
+
+  // Şarj olunan durağın detayları + curve fetch
+  const chargingStop =
+    chargingStopIdx != null ? highlightedStops[chargingStopIdx] : null
+
+  const chargingCurveQ = useQuery({
+    queryKey: [
+      'sim-charging-curve',
+      vehicleId,
+      chargingStop?.power_kw,
+      chargingStop?.arrival_soc_percent,
+      chargingStop?.target_soc_percent,
+    ],
+    queryFn: () =>
+      postChargingCurve({
+        vehicle_id: vehicleId!,
+        station_kw: chargingStop!.power_kw ?? 50,
+        start_soc_pct: chargingStop!.arrival_soc_percent ?? 20,
+        target_soc_pct: chargingStop!.target_soc_percent ?? 80,
+      }),
+    enabled:
+      !!vehicleId &&
+      !!chargingStop &&
+      (chargingStop.power_kw ?? 0) > 0 &&
+      (chargingStop.target_soc_percent ?? 0) >
+        (chargingStop.arrival_soc_percent ?? 0),
+    staleTime: 60_000,
+  })
 
   // Varışa kalan ROAD mesafesi (sim modunda total - simKm,
   // GPS modunda pozisyonun rota üzerindeki projeksiyonundan kalan)
@@ -922,6 +991,101 @@ export function MapView({
               </div>
               <div className="mt-1 rounded bg-slate-900/80 px-2 py-0.5 text-xs font-medium text-white">
                 km/h
+              </div>
+            </div>
+          )}
+
+          {/* Sim sırasında şarj durağında — modal benzeri overlay */}
+          {chargingStop && (
+            <div
+              className="pointer-events-auto absolute inset-0 z-30 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm"
+              onClick={handleChargingDone}
+            >
+              <div
+                className="w-full max-w-md overflow-hidden rounded-xl bg-white shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Header */}
+                <div className="bg-gradient-to-r from-indigo-600 to-violet-600 px-5 py-3.5 text-white">
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-indigo-100">
+                    Durak {chargingStopIdx! + 1} · Şarj olunuyor
+                  </div>
+                  <h3 className="text-base font-bold leading-tight">
+                    {chargingStop.name}
+                  </h3>
+                  <div className="mt-1 flex items-center gap-3 text-[11px] text-indigo-50/90">
+                    <span>⚡ {chargingStop.power_kw ?? '?'} kW</span>
+                    {chargingStop.arrival_soc_percent != null &&
+                      chargingStop.target_soc_percent != null && (
+                        <span>
+                          %{chargingStop.arrival_soc_percent.toFixed(0)} →{' '}
+                          %{chargingStop.target_soc_percent.toFixed(0)}
+                        </span>
+                      )}
+                  </div>
+                </div>
+
+                {/* Body */}
+                <div className="space-y-3 px-5 py-4">
+                  {chargingCurveQ.isPending && (
+                    <div className="py-6 text-center text-xs text-slate-500">
+                      Şarj eğrisi yükleniyor…
+                    </div>
+                  )}
+
+                  {chargingCurveQ.data &&
+                    chargingCurveQ.data.points.length > 1 && (
+                      <>
+                        <ChargingCurveChart
+                          points={chargingCurveQ.data.points}
+                          totalMinutes={chargingCurveQ.data.total_minutes}
+                        />
+                        <div className="grid grid-cols-3 gap-2 rounded-lg bg-slate-50 p-2 text-center text-[11px]">
+                          <div>
+                            <div className="text-[9px] uppercase text-slate-500">
+                              Süre
+                            </div>
+                            <div className="font-bold text-slate-900">
+                              {chargingCurveQ.data.total_minutes.toFixed(0)} dk
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-[9px] uppercase text-slate-500">
+                              Eklenen
+                            </div>
+                            <div className="font-bold text-slate-900">
+                              {chargingCurveQ.data.energy_kwh.toFixed(1)} kWh
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-[9px] uppercase text-slate-500">
+                              Pik güç
+                            </div>
+                            <div className="font-bold text-slate-900">
+                              {Math.round(
+                                Math.max(
+                                  ...chargingCurveQ.data.points.map(
+                                    (p) => p.power_kw,
+                                  ),
+                                ),
+                              )}{' '}
+                              kW
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                </div>
+
+                {/* Footer */}
+                <div className="flex items-center justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3">
+                  <button
+                    onClick={handleChargingDone}
+                    className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-indigo-500"
+                  >
+                    Şarjı tamamla → Devam et
+                  </button>
+                </div>
               </div>
             </div>
           )}

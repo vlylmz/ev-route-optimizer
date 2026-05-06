@@ -169,6 +169,8 @@ function App() {
         distance_along_route_km: s.distance_along_route_km,
         power_kw: s.power_kw,
         charge_minutes: s.charge_minutes,
+        arrival_soc_percent: s.arrival_soc_percent,
+        target_soc_percent: s.target_soc_percent,
         reserved: !!reservations[key],
       }
     })
@@ -222,6 +224,7 @@ function App() {
         navigationMode={navMode}
         speedLimits={speedLimitsM.data?.segments ?? []}
         highlightedStops={activeProfileStops}
+        vehicleId={submitted?.vehicle_id}
       />
 
       {/* Sidebar Aç butonu */}
