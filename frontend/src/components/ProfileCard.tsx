@@ -1,3 +1,4 @@
+import { Zap, Leaf, Scale, Plug } from 'lucide-react'
 import type {
   ProfileCard as ProfileCardType,
   RecommendedStop,
@@ -13,10 +14,16 @@ interface Props {
   onReserve?: (stop: RecommendedStop) => void
 }
 
-const STRATEGY_EMOJI: Record<string, string> = {
-  fast: '⚡',
-  efficient: '🌿',
-  balanced: '⚖️',
+const STRATEGY_ICON: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
+  fast: Zap,
+  efficient: Leaf,
+  balanced: Scale,
+}
+
+const STRATEGY_TONE: Record<string, string> = {
+  fast: 'text-amber-500',
+  efficient: 'text-emerald-500',
+  balanced: 'text-indigo-500',
 }
 
 function fmt(value: number | null | undefined, suffix: string, digits = 1) {
@@ -69,7 +76,15 @@ export function ProfileCard({
         disabled={!onSelect}
         className="flex items-center gap-2 text-left disabled:cursor-default"
       >
-        <span className="text-xl">{STRATEGY_EMOJI[card.key] ?? '•'}</span>
+        {(() => {
+          const Icon = STRATEGY_ICON[card.key]
+          return Icon ? (
+            <Icon
+              size={20}
+              className={STRATEGY_TONE[card.key] ?? 'text-slate-500'}
+            />
+          ) : null
+        })()}
         <div className="flex-1">
           <h3 className="flex items-center gap-1.5 text-base font-semibold text-slate-900">
             <span>{card.label}</span>
@@ -117,8 +132,9 @@ export function ProfileCard({
       {/* Rezervasyon yapılabilir duraklar */}
       {stops.length > 0 && onReserve && (
         <div className="flex flex-col gap-1.5 border-t border-slate-200 pt-3">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-            🔌 Şarj Durakları
+          <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+            <Plug size={11} />
+            <span>Şarj Durakları</span>
           </div>
           {stops.map((s, idx) => {
             const key = stopKey(card.key, idx)

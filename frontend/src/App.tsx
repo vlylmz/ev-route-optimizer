@@ -1,4 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
+import {
+  ArrowLeftRight,
+  BarChart3,
+  ChevronDown,
+  Compass,
+  Gauge,
+  History,
+  MapPin,
+  Mountain,
+  Sparkles,
+} from 'lucide-react'
 import { RouteForm } from './components/RouteForm'
 import { MapView } from './components/MapView'
 import { ReportPanel } from './components/ReportPanel'
@@ -273,7 +284,7 @@ function App() {
 
           {/* İçerik */}
           <div className="flex-1 space-y-5 px-5 py-5">
-            <Section title="Rota & Araç" icon="📍">
+            <Section title="Rota & Araç" icon={MapPin}>
               <RouteForm
                 vehicles={vehiclesQ.data ?? []}
                 vehiclesLoading={vehiclesQ.isLoading}
@@ -289,7 +300,17 @@ function App() {
             </Section>
 
             {history.entries.length > 0 && (
-              <Section title="Son Rotalar" icon="🕓">
+              <Section
+                title="Son Rotalar"
+                icon={History}
+                collapsible
+                defaultOpen={false}
+                badge={
+                  <span className="ml-1 rounded-full bg-slate-200 px-1.5 py-0 text-[9px] font-bold text-slate-600">
+                    {history.entries.length}
+                  </span>
+                }
+              >
                 <RouteHistoryPanel
                   entries={history.entries}
                   onSelect={handleSelectHistory}
@@ -320,19 +341,16 @@ function App() {
               >
                 <span className="absolute inset-0 bg-gradient-to-r from-indigo-400/0 via-white/20 to-indigo-400/0 opacity-0 transition group-hover:opacity-100" />
                 <span className="relative flex items-center justify-center gap-2">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="10" />
-                    <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
-                  </svg>
+                  <Compass size={16} />
                   <span>Yola Çık · 3D Navigasyon</span>
                 </span>
               </button>
             )}
 
             {geometry.length >= 2 && (
-              <div className="flex items-center justify-between rounded-lg border border-slate-200/70 bg-white/60 px-3 py-2 text-xs text-slate-600 backdrop-blur">
-                <span className="flex items-center gap-2">
-                  <span>🚦</span>
+              <div className="flex items-center justify-between rounded-xl border border-slate-200/70 bg-white/60 px-3 py-2 text-xs text-slate-600 backdrop-blur">
+                <span className="flex items-center gap-2 text-slate-500">
+                  <Gauge size={13} />
                   <span>Hız limitleri</span>
                 </span>
                 {speedLimitsM.isPending && (
@@ -360,7 +378,12 @@ function App() {
             )}
 
             {optimizeM.data && elevationProfile.length >= 2 && (
-              <Section title="Yükseklik Profili" icon="⛰️">
+              <Section
+                title="Yükseklik Profili"
+                icon={Mountain}
+                collapsible
+                defaultOpen={false}
+              >
                 <ElevationChart
                   profile={elevationProfile}
                   highlightedStops={activeProfileStops.map((s) => ({
@@ -372,7 +395,7 @@ function App() {
             )}
 
             {optimizeM.data && (
-              <Section title="Sonuç" icon="📊">
+              <Section title="Sonuç" icon={BarChart3}>
                 <ReportPanel
                   result={optimizeM.data}
                   reservations={reservations}
@@ -386,15 +409,16 @@ function App() {
             {optimizeM.data && submitted && (
               <button
                 onClick={() => setCompareOpen(true)}
-                className="w-full rounded-lg border border-violet-200 bg-violet-50/60 py-2.5 text-sm font-semibold text-violet-700 transition hover:bg-violet-100"
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50/60 py-2.5 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-100"
               >
-                🆚 Diğer araçlarla karşılaştır
+                <ArrowLeftRight size={14} />
+                <span>Diğer araçlarla karşılaştır</span>
               </button>
             )}
 
             {!optimizeM.data && !optimizeM.isPending && (
               <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50/60 p-6 text-center text-xs text-slate-500 backdrop-blur">
-                <span className="text-2xl">⚡</span>
+                <Sparkles size={28} className="text-indigo-300" />
                 <div className="font-semibold text-slate-700">Henüz plan yok</div>
                 <div>
                   Rota bilgilerini doldurup
@@ -450,17 +474,52 @@ function App() {
 
 function Section({
   title,
-  icon,
+  icon: Icon,
   children,
+  collapsible = false,
+  defaultOpen = true,
+  badge,
 }: {
   title: string
-  icon: string
+  icon: React.ComponentType<{ size?: number; className?: string }>
   children: React.ReactNode
+  collapsible?: boolean
+  defaultOpen?: boolean
+  badge?: React.ReactNode
 }) {
+  const [open, setOpen] = useState(defaultOpen)
+  const isOpen = collapsible ? open : true
+
+  if (collapsible) {
+    return (
+      <section className="rounded-xl border border-slate-200 bg-white/40 backdrop-blur">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex w-full items-center justify-between px-3 py-2 text-left"
+        >
+          <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-600">
+            <Icon size={12} className="text-slate-400" />
+            <span>{title}</span>
+            {badge}
+          </div>
+          <ChevronDown
+            size={14}
+            className={
+              'text-slate-400 transition-transform ' +
+              (isOpen ? 'rotate-180' : '')
+            }
+          />
+        </button>
+        {isOpen && <div className="px-3 pb-3">{children}</div>}
+      </section>
+    )
+  }
+
   return (
     <section>
-      <h2 className="mb-2 flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">
-        <span aria-hidden>{icon}</span>
+      <h2 className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+        <Icon size={12} className="text-slate-400" />
         <span>{title}</span>
       </h2>
       {children}

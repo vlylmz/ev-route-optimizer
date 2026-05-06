@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Battery, Target } from 'lucide-react'
 import { VehicleSelect } from './VehicleSelect'
 import { LocationSearchInput } from './LocationSearchInput'
 import type {
@@ -197,13 +198,13 @@ export function RouteForm({
 
       <div className="flex flex-col gap-3">
         <LocationSearchInput
-          label="🅰 Başlangıç"
+          label="A · Başlangıç"
           placeholder="Şehir, ilçe, yer adı…"
           value={start}
           onChange={setStart}
         />
         <LocationSearchInput
-          label="🅱 Varış"
+          label="B · Varış"
           placeholder="Şehir, ilçe, yer adı…"
           value={end}
           onChange={setEnd}
@@ -212,8 +213,9 @@ export function RouteForm({
 
       <div className="grid grid-cols-2 gap-3">
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-slate-600">
-            🔋 Başlangıç SOC
+          <label className="flex items-center gap-1 text-xs font-medium text-slate-600">
+            <Battery size={12} />
+            Başlangıç SOC
           </label>
           <div className="flex items-center gap-2">
             <input
@@ -229,8 +231,9 @@ export function RouteForm({
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-slate-600">
-            🎯 Varış SOC (min)
+          <label className="flex items-center gap-1 text-xs font-medium text-slate-600">
+            <Target size={12} />
+            Varış SOC (min)
           </label>
           <div className="flex items-center gap-2">
             <input
