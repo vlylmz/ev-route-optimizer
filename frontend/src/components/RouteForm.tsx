@@ -121,7 +121,12 @@ export function RouteForm({
   const [start, setStart] = useState<GeocodeResultItem | null>(null)
   const [end, setEnd] = useState<GeocodeResultItem | null>(null)
   const [initialSoc, setInitialSoc] = useState('80')
-  const [targetArrivalSoc, setTargetArrivalSoc] = useState<number>(20)
+  const [targetArrivalSocText, setTargetArrivalSocText] = useState<string>('20')
+  const targetArrivalSoc = (() => {
+    const n = parseInt(targetArrivalSocText, 10)
+    if (!Number.isFinite(n)) return 0
+    return Math.max(0, Math.min(100, n))
+  })()
   // Single-select segmented control. Default 'balanced' (Önerilen).
   const [preferredStrategy, setPreferredStrategy] =
     useState<StrategyName>('balanced')
@@ -134,7 +139,7 @@ export function RouteForm({
     if (presetVehicleId) setVehicleId(presetVehicleId)
     if (presetInitialSocPct != null) setInitialSoc(String(presetInitialSocPct))
     if (presetTargetArrivalSocPct != null) {
-      setTargetArrivalSoc(presetTargetArrivalSocPct)
+      setTargetArrivalSocText(String(presetTargetArrivalSocPct))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presetStart, presetEnd, presetVehicleId, presetInitialSocPct])
@@ -223,8 +228,20 @@ export function RouteForm({
               min="0"
               max="100"
               value={initialSoc}
-              onChange={(e) => setInitialSoc(e.target.value)}
-              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              onChange={(e) => {
+                const cleaned = e.target.value.replace(/[^0-9]/g, '').slice(0, 3)
+                const stripped = cleaned.replace(/^0+(?=\d)/, '')
+                const n = parseInt(stripped, 10)
+                if (Number.isFinite(n) && n > 100) {
+                  setInitialSoc('100')
+                } else {
+                  setInitialSoc(stripped)
+                }
+              }}
+              onBlur={() => {
+                if (initialSoc === '') setInitialSoc('0')
+              }}
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
             <span className="text-xs text-slate-500">%</span>
           </div>
@@ -240,13 +257,22 @@ export function RouteForm({
               type="number"
               min="0"
               max="100"
-              value={targetArrivalSoc}
-              onChange={(e) =>
-                setTargetArrivalSoc(
-                  Math.max(0, Math.min(100, Number(e.target.value) || 0)),
-                )
-              }
-              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              value={targetArrivalSocText}
+              onChange={(e) => {
+                // Sadece rakam, max 3 hane, leading-zero normalize
+                const cleaned = e.target.value.replace(/[^0-9]/g, '').slice(0, 3)
+                const stripped = cleaned.replace(/^0+(?=\d)/, '')
+                const n = parseInt(stripped, 10)
+                if (Number.isFinite(n) && n > 100) {
+                  setTargetArrivalSocText('100')
+                } else {
+                  setTargetArrivalSocText(stripped)
+                }
+              }}
+              onBlur={() => {
+                if (targetArrivalSocText === '') setTargetArrivalSocText('0')
+              }}
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
             <span className="text-xs text-slate-500">%</span>
           </div>
@@ -260,7 +286,7 @@ export function RouteForm({
           max={100}
           step={5}
           value={targetArrivalSoc}
-          onChange={(e) => setTargetArrivalSoc(parseInt(e.target.value, 10))}
+          onChange={(e) => setTargetArrivalSocText(e.target.value)}
           className="h-2 w-full accent-indigo-600"
         />
         <div className="flex justify-between text-[10px] text-slate-400">
