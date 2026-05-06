@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  ArrowLeftRight,
   BarChart3,
   ChevronDown,
   Compass,
@@ -14,7 +13,6 @@ import { RouteForm } from './components/RouteForm'
 import { MapView } from './components/MapView'
 import { ReportPanel } from './components/ReportPanel'
 import { ElevationChart } from './components/ElevationChart'
-import { VehicleCompareModal } from './components/VehicleCompareModal'
 import { RouteHistoryPanel } from './components/RouteHistoryPanel'
 import {
   ReservationDialog,
@@ -49,7 +47,6 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [navMode, setNavMode] = useState(false)
   const [activeProfileKey, setActiveProfileKey] = useState<string | null>(null)
-  const [compareOpen, setCompareOpen] = useState(false)
   const [pendingPreset, setPendingPreset] = useState<{
     start: GeocodeResultItem
     end: GeocodeResultItem
@@ -406,16 +403,6 @@ function App() {
               </Section>
             )}
 
-            {optimizeM.data && submitted && (
-              <button
-                onClick={() => setCompareOpen(true)}
-                className="flex w-full items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50/60 py-2.5 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-100"
-              >
-                <ArrowLeftRight size={14} />
-                <span>Diğer araçlarla karşılaştır</span>
-              </button>
-            )}
-
             {!optimizeM.data && !optimizeM.isPending && (
               <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50/60 p-6 text-center text-xs text-slate-500 backdrop-blur">
                 <Sparkles size={28} className="text-indigo-300" />
@@ -452,22 +439,6 @@ function App() {
         />
       )}
 
-      {/* Araç karşılaştırma modalı */}
-      {compareOpen && submitted && vehiclesQ.data && (
-        <VehicleCompareModal
-          vehicles={vehiclesQ.data}
-          defaultVehicleId={submitted.vehicle_id}
-          start={submitted.start}
-          end={submitted.end}
-          initialSocPct={submitted.initial_soc_pct}
-          targetArrivalSocPct={submitted.target_arrival_soc_pct}
-          strategy={
-            (activeProfileKey as 'fast' | 'efficient' | 'balanced' | null) ??
-            'balanced'
-          }
-          onClose={() => setCompareOpen(false)}
-        />
-      )}
     </div>
   )
 }

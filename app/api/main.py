@@ -16,7 +16,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.controllers import (
-    compare_router,
     estimate_router,
     geocode_router,
     optimize_router,
@@ -156,7 +155,6 @@ def create_app() -> FastAPI:
     app.include_router(optimize_router)
     app.include_router(speed_limit_router)
     app.include_router(geocode_router)
-    app.include_router(compare_router)
 
     return app
 

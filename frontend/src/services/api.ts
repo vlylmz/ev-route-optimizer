@@ -1,6 +1,5 @@
 import axios, { AxiosError } from 'axios'
 import {
-  CompareVehiclesResponseSchema,
   GeocodeResponseSchema,
   HealthResponseSchema,
   OptimizeRequestSchema,
@@ -9,8 +8,6 @@ import {
   SpeedLimitsResponseSchema,
   VehicleDetailSchema,
   VehicleSummarySchema,
-  type CompareVehiclesRequest,
-  type CompareVehiclesResponse,
   type GeocodeResponse,
   type HealthResponse,
   type OptimizeRequest,
@@ -139,13 +136,3 @@ export async function getGeocode(
   }
 }
 
-export async function postCompareVehicles(
-  body: CompareVehiclesRequest,
-): Promise<CompareVehiclesResponse> {
-  try {
-    const res = await api.post('/compare-vehicles', body)
-    return CompareVehiclesResponseSchema.parse(res.data)
-  } catch (err) {
-    rethrow(err)
-  }
-}

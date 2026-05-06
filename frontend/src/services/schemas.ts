@@ -154,40 +154,6 @@ export const GeocodeResponseSchema = z.object({
 })
 export type GeocodeResponse = z.infer<typeof GeocodeResponseSchema>
 
-export const VehicleComparisonRowSchema = z.object({
-  vehicle_id: z.string(),
-  vehicle_name: z.string(),
-  feasible: z.boolean(),
-  total_distance_km: z.number(),
-  total_energy_kwh: z.number(),
-  total_trip_minutes: z.number(),
-  charging_minutes: z.number(),
-  stop_count: z.number(),
-  final_soc_pct: z.number(),
-  total_cost_try: z.number(),
-  error: z.string().nullable().optional(),
-})
-export type VehicleComparisonRow = z.infer<typeof VehicleComparisonRowSchema>
-
-export const CompareVehiclesResponseSchema = z.object({
-  rows: z.array(VehicleComparisonRowSchema),
-  cheapest_vehicle_id: z.string().nullable().optional(),
-  fastest_vehicle_id: z.string().nullable().optional(),
-  most_efficient_vehicle_id: z.string().nullable().optional(),
-})
-export type CompareVehiclesResponse = z.infer<typeof CompareVehiclesResponseSchema>
-
-export const CompareVehiclesRequestSchema = z.object({
-  vehicle_ids: z.array(z.string()).min(2).max(4),
-  start: CoordinateSchema,
-  end: CoordinateSchema,
-  initial_soc_pct: z.number().min(0).max(100).default(80),
-  target_arrival_soc_pct: z.number().min(0).max(100).nullable().optional(),
-  strategy: StrategyNameSchema.default('balanced'),
-  use_ml: z.boolean().default(false),
-})
-export type CompareVehiclesRequest = z.infer<typeof CompareVehiclesRequestSchema>
-
 export const RouteResponseSchema = z.object({
   summary: z.object({
     distance_km: z.number(),
