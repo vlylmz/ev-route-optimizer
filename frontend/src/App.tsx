@@ -433,6 +433,7 @@ function App() {
         <ReservationDialog
           stop={activeReservation.stop}
           existingReservation={reservations[activeReservation.key] ?? null}
+          vehicleId={submitted?.vehicle_id}
           onClose={() => setActiveReservation(null)}
           onConfirm={handleConfirmReservation}
           onCancel={handleCancelReservation}

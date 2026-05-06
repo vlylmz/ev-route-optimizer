@@ -154,6 +154,32 @@ export const GeocodeResponseSchema = z.object({
 })
 export type GeocodeResponse = z.infer<typeof GeocodeResponseSchema>
 
+export const ChargingCurvePointSchema = z.object({
+  time_min: z.number(),
+  soc_pct: z.number(),
+  power_kw: z.number(),
+})
+export type ChargingCurvePoint = z.infer<typeof ChargingCurvePointSchema>
+
+export const ChargingCurveResponseSchema = z.object({
+  vehicle_id: z.string(),
+  station_kw: z.number(),
+  start_soc_pct: z.number(),
+  target_soc_pct: z.number(),
+  total_minutes: z.number(),
+  energy_kwh: z.number(),
+  points: z.array(ChargingCurvePointSchema),
+})
+export type ChargingCurveResponse = z.infer<typeof ChargingCurveResponseSchema>
+
+export const ChargingCurveRequestSchema = z.object({
+  vehicle_id: z.string(),
+  station_kw: z.number().positive(),
+  start_soc_pct: z.number().min(0).max(100),
+  target_soc_pct: z.number().min(0).max(100),
+})
+export type ChargingCurveRequest = z.infer<typeof ChargingCurveRequestSchema>
+
 export const RouteResponseSchema = z.object({
   summary: z.object({
     distance_km: z.number(),

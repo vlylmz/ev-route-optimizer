@@ -60,13 +60,17 @@ class ChargingStopSelector:
         default_detour_speed_kmh: float = 40.0,
         max_target_soc_percent: float = 85.0,
         post_80_taper_factor: float = 0.55,
+        curve_service: Any = None,
     ) -> None:
+        from app.services.charging_curve_service import ChargingCurveService
+
         self.reserve_soc_buffer = reserve_soc_buffer
         self.station_arrival_buffer_soc = station_arrival_buffer_soc
         self.default_station_power_kw = default_station_power_kw
         self.default_detour_speed_kmh = default_detour_speed_kmh
         self.max_target_soc_percent = max_target_soc_percent
         self.post_80_taper_factor = post_80_taper_factor
+        self.curve_service = curve_service or ChargingCurveService()
 
     def select_stop(
         self,
@@ -476,28 +480,28 @@ class ChargingStopSelector:
         station_power_kw: float,
         vehicle: Dict[str, Any],
     ) -> float:
-        if target_soc <= start_soc or usable_battery_kwh <= 0:
-            return 0.0
+        # Vehicle'ın charge_curve_hint + max_dc_charge_kw + station gücü ile
+        # SOC bazlı entegrasyon. Eski 80% sabit taper'ından çok daha doğru.
+        # Vehicle dict'inde max_dc_charge_power_kw varsa onu max_dc_charge_kw'a haritala.
+        vehicle_for_curve = dict(vehicle) if isinstance(vehicle, dict) else vehicle
+        if isinstance(vehicle_for_curve, dict):
+            if "max_dc_charge_kw" not in vehicle_for_curve:
+                v = _pick(
+                    vehicle_for_curve,
+                    "max_dc_charge_power_kw",
+                    "max_charge_power_kw",
+                    default=None,
+                )
+                if v is not None:
+                    vehicle_for_curve["max_dc_charge_kw"] = v
 
-        vehicle_max_kw = _safe_float(
-            _pick(vehicle, "max_dc_charge_power_kw", "max_charge_power_kw"),
-            station_power_kw,
+        return self.curve_service.compute_charge_minutes(
+            vehicle=vehicle_for_curve,
+            station_kw=station_power_kw,
+            start_soc_pct=start_soc,
+            target_soc_pct=target_soc,
+            usable_battery_kwh=usable_battery_kwh,
         )
-
-        effective_power_kw = max(min(station_power_kw, vehicle_max_kw), 1.0)
-
-        # 80%'e kadar hızlı, 80'den sonra taper etkisi.
-        fast_target = min(target_soc, 80.0)
-        fast_delta_soc = max(fast_target - start_soc, 0.0)
-        taper_delta_soc = max(target_soc - 80.0, 0.0)
-
-        fast_energy_kwh = usable_battery_kwh * (fast_delta_soc / 100.0)
-        taper_energy_kwh = usable_battery_kwh * (taper_delta_soc / 100.0)
-
-        fast_hours = fast_energy_kwh / max(effective_power_kw * 0.95, 1.0)
-        taper_hours = taper_energy_kwh / max(effective_power_kw * self.post_80_taper_factor, 1.0)
-
-        return (fast_hours + taper_hours) * 60.0
 
     def _risk_score(
         self,

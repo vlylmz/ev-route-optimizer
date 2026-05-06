@@ -1,4 +1,7 @@
 import { useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { postChargingCurve } from '../services/api'
+import { ChargingCurveChart } from './ChargingCurveChart'
 
 export interface RecommendedStop {
   name: string
@@ -26,6 +29,7 @@ export interface Reservation {
 interface Props {
   stop: RecommendedStop | null
   existingReservation: Reservation | null
+  vehicleId?: string
   onClose: () => void
   onConfirm: (reservation: Reservation) => void
   onCancel: () => void
@@ -58,10 +62,35 @@ function generateId(): string {
 export function ReservationDialog({
   stop,
   existingReservation,
+  vehicleId,
   onClose,
   onConfirm,
   onCancel,
 }: Props) {
+  // Şarj eğrisi grafiği — backend'den waypoint'leri çek
+  const curveQ = useQuery({
+    queryKey: [
+      'charging-curve',
+      vehicleId,
+      stop?.power_kw,
+      stop?.arrival_soc_percent,
+      stop?.target_soc_percent,
+    ],
+    queryFn: () =>
+      postChargingCurve({
+        vehicle_id: vehicleId!,
+        station_kw: stop!.power_kw,
+        start_soc_pct: stop!.arrival_soc_percent,
+        target_soc_pct: stop!.target_soc_percent,
+      }),
+    enabled:
+      !!vehicleId &&
+      !!stop &&
+      stop.power_kw > 0 &&
+      stop.target_soc_percent > stop.arrival_soc_percent,
+    staleTime: 60_000,
+  })
+
   const [time, setTime] = useState<string>(
     existingReservation?.startTime ?? nextQuarterHour(),
   )
@@ -177,6 +206,23 @@ export function ReservationDialog({
               ({stop.power_kw} kW × {duration} dk × ~85% verim)
             </span>
           </div>
+
+          {/* Şarj eğrisi grafiği */}
+          {curveQ.data && curveQ.data.points.length > 1 && (
+            <div className="rounded-lg border border-slate-200 bg-white px-2 pb-2 pt-1.5">
+              <ChargingCurveChart
+                points={curveQ.data.points}
+                totalMinutes={curveQ.data.total_minutes}
+              />
+              <div className="mt-1 text-[10px] text-slate-500">
+                Bu araç ve istasyon için gerçek şarj eğrisi —{' '}
+                <span className="font-semibold">
+                  {curveQ.data.total_minutes.toFixed(0)} dk
+                </span>{' '}
+                içinde {curveQ.data.energy_kwh.toFixed(1)} kWh
+              </div>
+            </div>
+          )}
 
           {/* Tahmini ücret */}
           {stop.cost_try != null && stop.cost_try > 0 && (

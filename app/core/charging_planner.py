@@ -52,9 +52,13 @@ class ChargingPlanner:
         *,
         reserve_soc_default: float = 10.0,
         energy_buffer_factor: float = 1.05,
+        curve_service: Any = None,
     ) -> None:
+        from app.services.charging_curve_service import ChargingCurveService
+
         self.reserve_soc_default = reserve_soc_default
         self.energy_buffer_factor = energy_buffer_factor
+        self.curve_service = curve_service or ChargingCurveService()
 
     def build_plan(
         self,
@@ -441,12 +445,14 @@ class ChargingPlanner:
             target_soc = max(target_soc, soc_at_arrival)
 
             station_power_kw = max(_safe_float(selected.get("power_kw"), 50.0), 1.0)
-            # 80% sonrasi taper
-            charge_kwh = max((target_soc - soc_at_arrival), 0.0) * usable_battery_kwh / 100.0
-            effective_power = (
-                station_power_kw if target_soc <= 80.0 else station_power_kw * 0.55
+            # Sofistike şarj eğrisi (vehicle.charge_curve_hint × station_kw)
+            charge_minutes = self.curve_service.compute_charge_minutes(
+                vehicle=vehicle,
+                station_kw=station_power_kw,
+                start_soc_pct=soc_at_arrival,
+                target_soc_pct=target_soc,
+                usable_battery_kwh=usable_battery_kwh,
             )
-            charge_minutes = (charge_kwh / effective_power) * 60.0
 
             detour_km = _safe_float(selected.get("detour_distance_km"), 0.0)
             detour_minutes = (

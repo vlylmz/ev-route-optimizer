@@ -320,6 +320,36 @@ class SpeedLimitsResponse(BaseModel):
 
 
 # =========================================================
+# /charging-curve
+# =========================================================
+
+
+class ChargingCurveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    vehicle_id: str
+    station_kw: float = Field(..., gt=0, le=400)
+    start_soc_pct: float = Field(..., ge=0, le=100)
+    target_soc_pct: float = Field(..., ge=0, le=100)
+
+
+class ChargingCurvePoint(BaseModel):
+    time_min: float
+    soc_pct: float
+    power_kw: float
+
+
+class ChargingCurveResponse(BaseModel):
+    vehicle_id: str
+    station_kw: float
+    start_soc_pct: float
+    target_soc_pct: float
+    total_minutes: float
+    energy_kwh: float
+    points: List[ChargingCurvePoint] = Field(default_factory=list)
+
+
+# =========================================================
 # /geocode
 # =========================================================
 

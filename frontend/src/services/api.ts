@@ -1,5 +1,6 @@
 import axios, { AxiosError } from 'axios'
 import {
+  ChargingCurveResponseSchema,
   GeocodeResponseSchema,
   HealthResponseSchema,
   OptimizeRequestSchema,
@@ -8,6 +9,8 @@ import {
   SpeedLimitsResponseSchema,
   VehicleDetailSchema,
   VehicleSummarySchema,
+  type ChargingCurveRequest,
+  type ChargingCurveResponse,
   type GeocodeResponse,
   type HealthResponse,
   type OptimizeRequest,
@@ -119,6 +122,17 @@ export async function postSpeedLimits(body: {
       sample_every_n_points: body.sample_every_n_points ?? 20,
     })
     return SpeedLimitsResponseSchema.parse(res.data)
+  } catch (err) {
+    rethrow(err)
+  }
+}
+
+export async function postChargingCurve(
+  body: ChargingCurveRequest,
+): Promise<ChargingCurveResponse> {
+  try {
+    const res = await api.post('/charging-curve', body)
+    return ChargingCurveResponseSchema.parse(res.data)
   } catch (err) {
     rethrow(err)
   }
