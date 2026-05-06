@@ -59,12 +59,17 @@ function App() {
 
   const handleSubmit = (
     req: OptimizeRequest,
-    extra: { start: GeocodeResultItem; end: GeocodeResultItem },
+    extra: {
+      start: GeocodeResultItem
+      end: GeocodeResultItem
+      preferredStrategy: 'fast' | 'efficient' | 'balanced'
+    },
   ) => {
     setSubmitted(req)
-    setSubmittedNames(extra)
+    setSubmittedNames({ start: extra.start, end: extra.end })
     setReservations({}) // yeni rota → eski rezervasyonları temizle
-    setActiveProfileKey(null) // yeni rota → recommended profile otomatik aktif olur
+    // Kullanıcının form'da seçtiği tercihi aktif profil olarak ayarla
+    setActiveProfileKey(extra.preferredStrategy)
     optimizeM.mutate(req)
     routeM.mutate({ start: req.start, end: req.end })
   }
@@ -240,30 +245,30 @@ function App() {
       {/* Sidebar */}
       {sidebarOpen && (
         <aside className="absolute left-0 top-0 z-20 flex h-full w-full flex-col overflow-y-auto border-r border-white/40 bg-white/80 shadow-2xl backdrop-blur-xl sm:w-[440px]">
-          {/* Gradient header */}
-          <div className="relative overflow-hidden bg-gradient-to-br from-indigo-600 via-indigo-500 to-violet-600 px-6 pb-6 pt-5 text-white">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.18),transparent_60%)]" />
-            <div className="relative flex items-start justify-between">
-              <div>
-                <div className="mb-1 inline-flex items-center gap-2 rounded-full bg-white/15 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider backdrop-blur">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
-                  Faz 7 — 3D Navigasyon
-                </div>
-                <h1 className="text-xl font-bold tracking-tight">
+          {/* Compact header — tek satır */}
+          <div className="relative flex items-center justify-between border-b border-slate-200 bg-white/95 px-5 py-3 backdrop-blur">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 to-violet-600 text-white shadow-sm">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+                </svg>
+              </div>
+              <div className="leading-tight">
+                <h1 className="text-sm font-bold text-slate-900">
                   EV Route Optimizer
                 </h1>
-                <p className="mt-0.5 text-xs text-indigo-100/90">
-                  Rota · Enerji · Şarj Planı · Rezervasyon
+                <p className="text-[10px] text-slate-500">
+                  Rota · Enerji · Şarj
                 </p>
               </div>
-              <button
-                onClick={() => setSidebarOpen(false)}
-                className="rounded-lg p-1.5 text-white/80 transition hover:bg-white/15 hover:text-white"
-                aria-label="Kapat"
-              >
-                ✕
-              </button>
             </div>
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="rounded-xl p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+              aria-label="Kapat"
+            >
+              ✕
+            </button>
           </div>
 
           {/* İçerik */}
@@ -311,11 +316,14 @@ function App() {
             {geometry.length >= 2 && (
               <button
                 onClick={handleStartNav}
-                className="group relative w-full overflow-hidden rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 py-3.5 text-sm font-bold text-white shadow-lg transition hover:shadow-xl active:scale-[0.99]"
+                className="group relative w-full overflow-hidden rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 py-3.5 text-sm font-bold text-white shadow-lg transition hover:shadow-xl active:scale-[0.99]"
               >
-                <span className="absolute inset-0 bg-gradient-to-r from-emerald-400/0 via-white/20 to-emerald-400/0 opacity-0 transition group-hover:opacity-100" />
+                <span className="absolute inset-0 bg-gradient-to-r from-indigo-400/0 via-white/20 to-indigo-400/0 opacity-0 transition group-hover:opacity-100" />
                 <span className="relative flex items-center justify-center gap-2">
-                  <span className="text-lg">🧭</span>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
+                  </svg>
                   <span>Yola Çık · 3D Navigasyon</span>
                 </span>
               </button>

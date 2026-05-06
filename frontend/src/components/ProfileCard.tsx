@@ -37,10 +37,8 @@ export function ProfileCard({
   onReserve,
 }: Props) {
   const border = active
-    ? 'border-emerald-500 ring-2 ring-emerald-300 bg-emerald-50/80'
-    : recommended
-    ? 'border-indigo-500 ring-2 ring-indigo-200'
-    : 'border-slate-200 hover:border-indigo-300'
+    ? 'border-indigo-600 ring-4 ring-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-violet-50 shadow-md'
+    : 'border-slate-200 hover:border-indigo-300 opacity-70 hover:opacity-100'
 
   const stops = card.recommended_stops ?? []
 
@@ -54,12 +52,13 @@ export function ProfileCard({
       className={`relative flex flex-col gap-3 rounded-xl border bg-white/85 p-4 shadow-sm backdrop-blur transition ${border}`}
     >
       {active && (
-        <span className="absolute -top-2 left-3 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-semibold text-white shadow">
-          ✓ Haritada
+        <span className="absolute -top-2 left-3 inline-flex items-center gap-1 rounded-full bg-indigo-600 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white shadow-md">
+          <span className="h-1.5 w-1.5 rounded-full bg-white" />
+          Aktif
         </span>
       )}
       {recommended && !active && (
-        <span className="absolute -top-2 right-3 rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-semibold text-white shadow">
+        <span className="absolute -top-2 right-3 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
           Önerilen
         </span>
       )}
@@ -112,7 +111,6 @@ export function ProfileCard({
               ? `${card.total_cost_try.toFixed(0)} ₺`
               : '—'
           }
-          highlight={card.total_cost_try > 0}
         />
       </dl>
 
@@ -170,35 +168,13 @@ export function ProfileCard({
   )
 }
 
-function Stat({
-  label,
-  value,
-  highlight,
-}: {
-  label: string
-  value: string
-  highlight?: boolean
-}) {
+function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div
-      className={
-        'rounded-md px-2 py-1.5 ' +
-        (highlight
-          ? 'bg-amber-50 ring-1 ring-amber-200'
-          : 'bg-slate-50/80')
-      }
-    >
+    <div className="rounded-lg bg-slate-50/80 px-2 py-1.5">
       <div className="text-[10px] uppercase tracking-wider text-slate-500">
         {label}
       </div>
-      <div
-        className={
-          'text-sm font-semibold ' +
-          (highlight ? 'text-amber-700' : 'text-slate-900')
-        }
-      >
-        {value}
-      </div>
+      <div className="text-sm font-semibold text-slate-900">{value}</div>
     </div>
   )
 }

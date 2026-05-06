@@ -65,8 +65,14 @@ export function ReservationDialog({
   const [time, setTime] = useState<string>(
     existingReservation?.startTime ?? nextQuarterHour(),
   )
+  // Çok kısa öneri (1-4 dk) anlamsız — minimum 10 dk göster
+  const recommendedDuration = (chargeMin: number): number => {
+    return Math.max(10, Math.round(chargeMin))
+  }
+
   const [duration, setDuration] = useState<number>(
-    existingReservation?.durationMinutes ?? Math.round(stop?.charge_minutes ?? 20),
+    existingReservation?.durationMinutes ??
+      recommendedDuration(stop?.charge_minutes ?? 20),
   )
 
   useEffect(() => {
@@ -74,7 +80,7 @@ export function ReservationDialog({
       setTime(existingReservation.startTime)
       setDuration(existingReservation.durationMinutes)
     } else if (stop) {
-      setDuration(Math.round(stop.charge_minutes))
+      setDuration(recommendedDuration(stop.charge_minutes))
     }
   }, [stop, existingReservation])
 
@@ -99,16 +105,16 @@ export function ReservationDialog({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl"
+        className="w-full max-w-md overflow-hidden rounded-xl bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="bg-gradient-to-r from-emerald-600 to-teal-600 px-5 py-4 text-white">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-emerald-100">
+        <div className="bg-gradient-to-r from-indigo-600 to-violet-600 px-5 py-4 text-white">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-indigo-100">
             {isEditing ? 'Rezervasyon Düzenle' : 'Şarj Rezervasyonu'}
           </div>
           <h3 className="text-lg font-bold leading-tight">{stop.name}</h3>
-          <div className="mt-1 flex items-center gap-3 text-xs text-emerald-50/90">
+          <div className="mt-1 flex items-center gap-3 text-xs text-indigo-50/90">
             <span>📍 {stop.distance_along_route_km.toFixed(1)} km'de</span>
             <span>⚡ {stop.power_kw} kW</span>
           </div>
@@ -132,10 +138,10 @@ export function ReservationDialog({
               type="time"
               value={time}
               onChange={(e) => setTime(e.target.value)}
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              className="rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
             <span className="text-[10px] text-slate-500">
-              Şarj noktası bu saat için 15 dakika tutulur (mock).
+              Şarj noktası bu saat için 15 dakika tutulur.
             </span>
           </div>
 
@@ -155,7 +161,7 @@ export function ReservationDialog({
             />
             <div className="flex justify-between text-[10px] text-slate-400">
               <span>5 dk</span>
-              <span>Önerilen: {Math.round(stop.charge_minutes)} dk</span>
+              <span>Önerilen: {recommendedDuration(stop.charge_minutes)} dk</span>
               <span>90 dk</span>
             </div>
           </div>
@@ -210,7 +216,7 @@ export function ReservationDialog({
           )}
           <button
             onClick={handleConfirm}
-            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-emerald-500"
+            className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-indigo-500"
           >
             {isEditing ? 'Güncelle' : 'Rezerve Et'}
           </button>

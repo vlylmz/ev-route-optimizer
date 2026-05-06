@@ -48,19 +48,39 @@ export function ReportPanel({
         </div>
       </div>
 
-      {/* Maliyet karşılaştırma kuşağı */}
-      {profiles.some((p) => p.total_cost_try > 0) && (
-        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50/70 px-3 py-2 backdrop-blur">
-          <span className="text-base">💰</span>
-          <div className="flex-1 text-[11px] text-amber-900">
-            <div className="font-semibold">Tahmini şarj maliyeti</div>
-            <div className="text-amber-700">
-              {profiles
-                .filter((p) => p.feasible && p.total_cost_try > 0)
-                .map((p) => `${p.label}: ${p.total_cost_try.toFixed(0)}₺`)
-                .join(' · ')}
-            </div>
-          </div>
+      {/* Üç profil kompakt karşılaştırma kuşağı (süre + maliyet) */}
+      {profiles.some((p) => p.feasible) && (
+        <div className="grid grid-cols-3 gap-1.5 rounded-xl border border-slate-200 bg-white/70 p-1.5 backdrop-blur">
+          {profiles
+            .filter((p) => p.feasible)
+            .map((p) => {
+              const isActive = p.key === activeProfileKey
+              return (
+                <button
+                  key={p.key}
+                  type="button"
+                  onClick={() => onSelectProfile?.(p.key)}
+                  className={
+                    'flex flex-col items-center rounded-lg px-2 py-1.5 text-[10px] transition ' +
+                    (isActive
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-slate-600 hover:bg-slate-100')
+                  }
+                >
+                  <span className="font-semibold opacity-90">{p.label}</span>
+                  <span className="mt-0.5 text-sm font-bold tabular-nums">
+                    {p.total_cost_try > 0
+                      ? `${p.total_cost_try.toFixed(0)}₺`
+                      : '—'}
+                  </span>
+                  <span className="text-[9px] opacity-70">
+                    {p.total_trip_minutes != null
+                      ? `${p.total_trip_minutes.toFixed(0)} dk`
+                      : ''}
+                  </span>
+                </button>
+              )
+            })}
         </div>
       )}
 

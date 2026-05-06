@@ -14,7 +14,11 @@ interface Props {
   vehiclesError?: boolean
   onSubmit: (
     req: OptimizeRequest,
-    extra: { start: GeocodeResultItem; end: GeocodeResultItem },
+    extra: {
+      start: GeocodeResultItem
+      end: GeocodeResultItem
+      preferredStrategy: StrategyName
+    },
   ) => void
   isSubmitting?: boolean
   presetStart?: GeocodeResultItem | null
@@ -117,6 +121,10 @@ export function RouteForm({
   const [end, setEnd] = useState<GeocodeResultItem | null>(null)
   const [initialSoc, setInitialSoc] = useState('80')
   const [targetArrivalSoc, setTargetArrivalSoc] = useState<number>(20)
+  // Single-select segmented control. Default 'balanced' (Önerilen).
+  const [preferredStrategy, setPreferredStrategy] =
+    useState<StrategyName>('balanced')
+  const [useMl, setUseMl] = useState(false)
 
   // Geçmişten bir rota seçildiğinde formu doldur
   useEffect(() => {
@@ -129,34 +137,24 @@ export function RouteForm({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presetStart, presetEnd, presetVehicleId, presetInitialSocPct])
-  const [strategies, setStrategies] = useState<StrategyName[]>([
-    'fast',
-    'efficient',
-    'balanced',
-  ])
-  const [useMl, setUseMl] = useState(false)
 
   const effectiveVehicleId =
     vehicleId || (vehicles.length > 0 ? vehicles[0].id : '')
-
-  const toggleStrategy = (key: StrategyName) => {
-    setStrategies((prev) =>
-      prev.includes(key) ? prev.filter((s) => s !== key) : [...prev, key],
-    )
-  }
 
   const applyPreset = (preset: (typeof DEFAULT_PRESETS)[number]) => {
     setStart(preset.start)
     setEnd(preset.end)
   }
 
-  const canSubmit =
-    !!effectiveVehicleId && !!start && !!end && strategies.length > 0
+  const canSubmit = !!effectiveVehicleId && !!start && !!end
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!canSubmit || !start || !end) return
 
+    // Backend her zaman 3 stratejiyi de hesaplar (karşılaştırma için).
+    // Kullanıcının tercihi sonuçta hangisinin "aktif/önerilen" olarak
+    // vurgulanacağını belirler.
     onSubmit(
       {
         vehicle_id: effectiveVehicleId,
@@ -164,10 +162,10 @@ export function RouteForm({
         end: { lat: end.lat, lon: end.lon },
         initial_soc_pct: parseFloat(initialSoc),
         target_arrival_soc_pct: targetArrivalSoc,
-        strategies,
+        strategies: ['fast', 'efficient', 'balanced'],
         use_ml: useMl,
       },
-      { start, end },
+      { start, end, preferredStrategy },
     )
   }
 
@@ -271,30 +269,39 @@ export function RouteForm({
         </div>
       </div>
 
-      <fieldset className="flex flex-col gap-2">
+      <fieldset className="flex flex-col gap-1.5">
         <legend className="text-xs font-medium text-slate-600">
-          Stratejiler
+          Tercih edilen profil
         </legend>
-        <div className="flex gap-1.5">
+        <div className="flex rounded-xl bg-slate-100 p-1">
           {STRATEGY_LIST.map((s) => {
-            const active = strategies.includes(s.key)
+            const active = preferredStrategy === s.key
             return (
               <button
                 key={s.key}
                 type="button"
-                onClick={() => toggleStrategy(s.key)}
+                onClick={() => setPreferredStrategy(s.key)}
                 className={
-                  'flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition ' +
+                  'flex-1 rounded-lg px-2 py-1.5 text-xs font-semibold transition ' +
                   (active
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200')
+                    ? 'bg-white text-indigo-700 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700')
                 }
               >
                 {s.label}
+                {s.key === 'balanced' && !active && (
+                  <span className="ml-1 text-[9px] text-indigo-500">
+                    önerilen
+                  </span>
+                )}
               </button>
             )
           })}
         </div>
+        <p className="text-[10px] text-slate-500">
+          Üç profil de hesaplanır; bu seçim haritada öne çıkarılan rotayı
+          belirler.
+        </p>
       </fieldset>
 
       <label className="flex items-center gap-2 text-xs text-slate-700">
@@ -310,9 +317,18 @@ export function RouteForm({
       <button
         type="submit"
         disabled={isSubmitting || !canSubmit}
-        className="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+        className={
+          'rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-sm transition active:scale-[0.99] ' +
+          (canSubmit && !isSubmitting
+            ? 'bg-indigo-600 shadow-indigo-600/20 hover:bg-indigo-500'
+            : 'cursor-not-allowed bg-slate-300')
+        }
       >
-        {isSubmitting ? 'Hesaplanıyor…' : 'Rotayı Optimize Et'}
+        {isSubmitting
+          ? 'Hesaplanıyor…'
+          : canSubmit
+          ? 'Rotayı Optimize Et'
+          : 'Başlangıç ve varış seç'}
       </button>
     </form>
   )

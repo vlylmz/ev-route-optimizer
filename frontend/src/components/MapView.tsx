@@ -866,8 +866,24 @@ export function MapView({
           </div>
 
           {gpsError && (
-            <div className="absolute top-4 left-1/2 z-10 -translate-x-1/2 rounded-md bg-amber-500 px-4 py-2 text-sm text-amber-950 shadow-lg">
-              ⚠ {gpsError}
+            <div className="pointer-events-auto absolute top-4 right-4 z-20 flex max-w-xs items-start gap-2 rounded-xl border border-amber-300 bg-white/95 px-3 py-2.5 text-xs shadow-xl backdrop-blur">
+              <span className="text-base leading-none">⚠</span>
+              <div className="flex-1">
+                <div className="font-semibold text-amber-900">
+                  Konum izni gerekli
+                </div>
+                <div className="mt-0.5 text-[10px] leading-snug text-slate-600">
+                  3D navigasyon için tarayıcı konum erişimine izin ver veya
+                  simülasyon modunu kullan.
+                </div>
+              </div>
+              <button
+                onClick={() => setGpsError(null)}
+                className="rounded p-0.5 text-slate-400 hover:text-slate-700"
+                aria-label="Kapat"
+              >
+                ✕
+              </button>
             </div>
           )}
 
