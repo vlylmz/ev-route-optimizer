@@ -124,6 +124,43 @@ class ChargingCurveService:
             soc = next_soc
         return round(total_minutes, 2)
 
+    def find_target_soc_for_minutes(
+        self,
+        vehicle: Any,
+        station_kw: float,
+        start_soc_pct: float,
+        target_minutes: float,
+        usable_battery_kwh: float,
+        *,
+        max_target: float = 85.0,
+        step_pct: float = 0.5,
+    ) -> float:
+        """
+        Verilen sürede şarj olunca ulaşılan SOC'yi bulur.
+        SOC adım adım yürür, geçen dakikayı hesaplar; target dakikaya
+        ulaşıldığında (ya da max_target'a) durup interpolasyonla SOC döner.
+        """
+        if target_minutes <= 0 or usable_battery_kwh <= 0 or station_kw <= 0:
+            return start_soc_pct
+
+        soc = start_soc_pct
+        elapsed = 0.0
+
+        while soc < max_target:
+            next_soc = min(soc + step_pct, max_target)
+            mid = (soc + next_soc) / 2
+            kw = self.power_at_soc(vehicle, station_kw, mid)
+            energy_kwh = (next_soc - soc) / 100.0 * usable_battery_kwh
+            dt = (energy_kwh / kw) * 60.0
+            if elapsed + dt >= target_minutes:
+                # Bu adımda hedef süre dolar — interpolate et
+                ratio = (target_minutes - elapsed) / dt
+                return round(soc + (next_soc - soc) * ratio, 2)
+            elapsed += dt
+            soc = next_soc
+
+        return round(max_target, 2)
+
     def simulate_session(
         self,
         vehicle: Any,

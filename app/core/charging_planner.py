@@ -52,12 +52,14 @@ class ChargingPlanner:
         *,
         reserve_soc_default: float = 10.0,
         energy_buffer_factor: float = 1.05,
+        min_stop_minutes: float = 10.0,
         curve_service: Any = None,
     ) -> None:
         from app.services.charging_curve_service import ChargingCurveService
 
         self.reserve_soc_default = reserve_soc_default
         self.energy_buffer_factor = energy_buffer_factor
+        self.min_stop_minutes = min_stop_minutes
         self.curve_service = curve_service or ChargingCurveService()
 
     def build_plan(
@@ -204,6 +206,32 @@ class ChargingPlanner:
             _pick(selected_station, "power_kw", "max_power_kw", "dc_power_kw"),
             0.0,
         )
+
+        # Min duraklama süresi: kullanıcı 1-2 dk için durmaz.
+        # Süre çok kısaysa, target SOC'yi yükselt.
+        if (
+            self.min_stop_minutes > 0
+            and charge_minutes < self.min_stop_minutes
+            and target_soc_percent < 85.0
+            and station_power_kw > 0
+        ):
+            extended_target = self.curve_service.find_target_soc_for_minutes(
+                vehicle=vehicle,
+                station_kw=station_power_kw,
+                start_soc_pct=arrival_soc_at_station,
+                target_minutes=self.min_stop_minutes,
+                usable_battery_kwh=usable_battery_kwh,
+                max_target=85.0,
+            )
+            if extended_target > target_soc_percent:
+                target_soc_percent = extended_target
+                charge_minutes = self.curve_service.compute_charge_minutes(
+                    vehicle=vehicle,
+                    station_kw=station_power_kw,
+                    start_soc_pct=arrival_soc_at_station,
+                    target_soc_pct=target_soc_percent,
+                    usable_battery_kwh=usable_battery_kwh,
+                )
 
         post_charge_remaining_distance_km = remaining_distance_km + detour_distance_km
         required_post_charge_energy_kwh = (
@@ -453,6 +481,31 @@ class ChargingPlanner:
                 target_soc_pct=target_soc,
                 usable_battery_kwh=usable_battery_kwh,
             )
+            # Min duraklama süresi: kullanıcı 1-2 dk için durmaz.
+            # Süre çok kısaysa, target SOC'yi yükselt — daha çok şarj eklenir,
+            # sonraki segmentlerde belki bir durak daha az gerekecek.
+            if (
+                self.min_stop_minutes > 0
+                and charge_minutes < self.min_stop_minutes
+                and target_soc < max_target_soc
+            ):
+                extended_target = self.curve_service.find_target_soc_for_minutes(
+                    vehicle=vehicle,
+                    station_kw=station_power_kw,
+                    start_soc_pct=soc_at_arrival,
+                    target_minutes=self.min_stop_minutes,
+                    usable_battery_kwh=usable_battery_kwh,
+                    max_target=max_target_soc,
+                )
+                if extended_target > target_soc:
+                    target_soc = extended_target
+                    charge_minutes = self.curve_service.compute_charge_minutes(
+                        vehicle=vehicle,
+                        station_kw=station_power_kw,
+                        start_soc_pct=soc_at_arrival,
+                        target_soc_pct=target_soc,
+                        usable_battery_kwh=usable_battery_kwh,
+                    )
 
             detour_km = _safe_float(selected.get("detour_distance_km"), 0.0)
             detour_minutes = (

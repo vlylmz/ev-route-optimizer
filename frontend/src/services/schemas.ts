@@ -111,6 +111,7 @@ export const OptimizeRequestSchema = z.object({
   end: CoordinateSchema,
   initial_soc_pct: z.number().min(0).max(100),
   target_arrival_soc_pct: z.number().min(0).max(100).nullable().optional(),
+  min_stop_minutes: z.number().min(0).max(120).default(10),
   strategies: z.array(StrategyNameSchema).min(1),
   use_ml: z.boolean().default(false),
 })

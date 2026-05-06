@@ -232,6 +232,14 @@ def optimize_route(
     if req.target_arrival_soc_pct is not None:
         charge_need_dict["target_arrival_soc_pct"] = float(req.target_arrival_soc_pct)
 
+    # Min duraklama süresi (kullanıcı 1-2 dk için durmaz). Planner attribute'una uygula.
+    _planner = getattr(profiles_engine, "charging_planner", None)
+    if _planner is not None:
+        try:
+            _planner.min_stop_minutes = float(req.min_stop_minutes)
+        except AttributeError:
+            pass  # Test fixture'larda planner yok / değiştirilemez olabilir
+
     # 4) Profiller
     try:
         profile_result = profiles_engine.generate_profiles(

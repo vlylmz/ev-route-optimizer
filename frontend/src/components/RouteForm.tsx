@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Battery, Target } from 'lucide-react'
+import { Battery, Clock, Target } from 'lucide-react'
 import { VehicleSelect } from './VehicleSelect'
 import { LocationSearchInput } from './LocationSearchInput'
 import type {
@@ -130,6 +130,7 @@ export function RouteForm({
   // Single-select segmented control. Default 'balanced' (Önerilen).
   const [preferredStrategy, setPreferredStrategy] =
     useState<StrategyName>('balanced')
+  const [minStopMinutes, setMinStopMinutes] = useState<number>(10)
   const [useMl, setUseMl] = useState(false)
 
   // Geçmişten bir rota seçildiğinde formu doldur
@@ -168,6 +169,7 @@ export function RouteForm({
         end: { lat: end.lat, lon: end.lon },
         initial_soc_pct: parseFloat(initialSoc),
         target_arrival_soc_pct: targetArrivalSoc,
+        min_stop_minutes: minStopMinutes,
         strategies: ['fast', 'efficient', 'balanced'],
         use_ml: useMl,
       },
@@ -330,6 +332,37 @@ export function RouteForm({
         <p className="text-[10px] text-slate-500">
           Üç profil de hesaplanır; bu seçim haritada öne çıkarılan rotayı
           belirler.
+        </p>
+      </fieldset>
+
+      <fieldset className="flex flex-col gap-1.5">
+        <legend className="flex items-center gap-1 text-xs font-medium text-slate-600">
+          <Clock size={12} />
+          Min duraklama süresi
+        </legend>
+        <div className="flex rounded-xl bg-slate-100 p-1">
+          {[5, 10, 15, 20, 30].map((m) => {
+            const active = minStopMinutes === m
+            return (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setMinStopMinutes(m)}
+                className={
+                  'flex-1 rounded-lg py-1.5 text-xs font-semibold transition ' +
+                  (active
+                    ? 'bg-white text-indigo-700 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700')
+                }
+              >
+                {m}dk
+              </button>
+            )
+          })}
+        </div>
+        <p className="text-[10px] text-slate-500">
+          Bir durakta en az bu kadar şarj yapılır; çok kısa duraklar
+          önerilmez.
         </p>
       </fieldset>
 

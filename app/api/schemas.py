@@ -215,6 +215,16 @@ class OptimizeRequest(BaseModel):
             "None ise sadece aracın güvenli rezerv eşiği kullanılır."
         ),
     )
+    min_stop_minutes: float = Field(
+        10.0,
+        ge=0.0,
+        le=120.0,
+        description=(
+            "Bir şarj durağında geçirilecek minimum süre (dk). "
+            "Kısa süreler gerçekçi değildir; planlayıcı bu eşiğin altındaki "
+            "duraklarda otomatik olarak hedef SOC'yi yükseltir."
+        ),
+    )
     strategies: List[StrategyName] = Field(
         default_factory=lambda: ["fast", "efficient", "balanced"]
     )
