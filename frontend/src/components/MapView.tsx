@@ -590,6 +590,76 @@ export function MapView({
     staleTime: 60_000,
   })
 
+  // Şarj animasyonu — SOC dolmaya başlasın, kW azalsın
+  const [chargeProgress, setChargeProgress] = useState(0) // 0..1
+  const [animatedSoc, setAnimatedSoc] = useState(0)
+  const [animatedKw, setAnimatedKw] = useState(0)
+  const [animatedTimeMin, setAnimatedTimeMin] = useState(0)
+
+  useEffect(() => {
+    if (!chargingStop || !chargingCurveQ.data) return
+    const points = chargingCurveQ.data.points
+    if (points.length < 2) return
+
+    // Başlangıç değerleri
+    setChargeProgress(0)
+    setAnimatedSoc(points[0].soc_pct)
+    setAnimatedKw(points[0].power_kw)
+    setAnimatedTimeMin(0)
+
+    const totalRealMin = chargingCurveQ.data.total_minutes
+    // Animasyonu sim hızına göre kompakte et: 1× hızda 6 sn, 8× hızda ~2sn
+    const animDurationMs = Math.max(
+      2000,
+      Math.min(8000, (totalRealMin * 60 * 1000) / Math.max(simSpeedMul, 1) / 8),
+    )
+    const totalCurveMin = points[points.length - 1].time_min
+
+    let raf = 0
+    const startTs = performance.now()
+
+    const tick = (now: number) => {
+      const elapsed = now - startTs
+      const t = Math.min(1, elapsed / animDurationMs)
+      setChargeProgress(t)
+
+      const targetTimeMin = t * totalCurveMin
+      // points içinde lerp
+      let idx = 0
+      for (let i = 0; i < points.length - 1; i++) {
+        if (points[i + 1].time_min >= targetTimeMin) {
+          idx = i
+          break
+        }
+        idx = i
+      }
+      const a = points[idx]
+      const b = points[Math.min(idx + 1, points.length - 1)]
+      const localT =
+        b.time_min > a.time_min
+          ? (targetTimeMin - a.time_min) / (b.time_min - a.time_min)
+          : 0
+      setAnimatedSoc(a.soc_pct + (b.soc_pct - a.soc_pct) * localT)
+      setAnimatedKw(a.power_kw + (b.power_kw - a.power_kw) * localT)
+      setAnimatedTimeMin(targetTimeMin)
+
+      if (t < 1) {
+        raf = requestAnimationFrame(tick)
+      }
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [chargingStop, chargingCurveQ.data, simSpeedMul])
+
+  // Animasyon bitince otomatik devam (küçük gecikmeyle)
+  useEffect(() => {
+    if (chargeProgress >= 1 && chargingStop) {
+      const t = setTimeout(() => handleChargingDone(), 900)
+      return () => clearTimeout(t)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chargeProgress])
+
   // Varışa kalan ROAD mesafesi (sim modunda total - simKm,
   // GPS modunda pozisyonun rota üzerindeki projeksiyonundan kalan)
   const remainingRoadKm = useMemo(() => {
@@ -995,10 +1065,10 @@ export function MapView({
             </div>
           )}
 
-          {/* Sim sırasında şarj durağında — modal benzeri overlay */}
+          {/* Sim sırasında şarj durağında — animasyonlu modal */}
           {chargingStop && (
             <div
-              className="pointer-events-auto absolute inset-0 z-30 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm"
+              className="pointer-events-auto absolute inset-0 z-30 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm"
               onClick={handleChargingDone}
             >
               <div
@@ -1007,8 +1077,11 @@ export function MapView({
               >
                 {/* Header */}
                 <div className="bg-gradient-to-r from-indigo-600 to-violet-600 px-5 py-3.5 text-white">
-                  <div className="text-[10px] font-semibold uppercase tracking-wider text-indigo-100">
-                    Durak {chargingStopIdx! + 1} · Şarj olunuyor
+                  <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-indigo-100">
+                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-300" />
+                    <span>
+                      Durak {chargingStopIdx! + 1} · Şarj olunuyor
+                    </span>
                   </div>
                   <h3 className="text-base font-bold leading-tight">
                     {chargingStop.name}
@@ -1018,32 +1091,139 @@ export function MapView({
                     {chargingStop.arrival_soc_percent != null &&
                       chargingStop.target_soc_percent != null && (
                         <span>
-                          %{chargingStop.arrival_soc_percent.toFixed(0)} →{' '}
+                          Hedef: %{chargingStop.arrival_soc_percent.toFixed(0)} →
                           %{chargingStop.target_soc_percent.toFixed(0)}
                         </span>
                       )}
                   </div>
                 </div>
 
-                {/* Body */}
-                <div className="space-y-3 px-5 py-4">
+                {/* Animated body */}
+                <div className="space-y-4 px-5 py-5">
                   {chargingCurveQ.isPending && (
                     <div className="py-6 text-center text-xs text-slate-500">
-                      Şarj eğrisi yükleniyor…
+                      Şarj eğrisi hazırlanıyor…
                     </div>
                   )}
 
                   {chargingCurveQ.data &&
                     chargingCurveQ.data.points.length > 1 && (
                       <>
+                        {/* Büyük animasyonlu SOC göstergesi */}
+                        <div className="flex items-center gap-4">
+                          {/* Battery SVG — alttan üste dolar */}
+                          <div className="relative">
+                            <svg
+                              width="80"
+                              height="120"
+                              viewBox="0 0 80 120"
+                              className="drop-shadow-sm"
+                            >
+                              {/* Battery cap */}
+                              <rect
+                                x="28"
+                                y="0"
+                                width="24"
+                                height="8"
+                                rx="2"
+                                fill="#cbd5e1"
+                              />
+                              {/* Battery body outline */}
+                              <rect
+                                x="6"
+                                y="8"
+                                width="68"
+                                height="108"
+                                rx="6"
+                                fill="white"
+                                stroke="#94a3b8"
+                                strokeWidth="3"
+                              />
+                              {/* Fill — SOC'ye göre yükselen */}
+                              <rect
+                                x="10"
+                                y={12 + (100 - animatedSoc) / 100 * 100}
+                                width="60"
+                                height={(animatedSoc / 100) * 100}
+                                rx="3"
+                                fill={
+                                  animatedSoc < 30
+                                    ? '#ef4444'
+                                    : animatedSoc < 70
+                                    ? '#eab308'
+                                    : '#22c55e'
+                                }
+                                style={{ transition: 'all 80ms linear' }}
+                              />
+                              {/* Animated bolt */}
+                              <g
+                                transform="translate(40 65)"
+                                className="animate-pulse"
+                              >
+                                <path
+                                  d="M-8 -16 L4 -2 L-2 -2 L6 16 L-6 0 L0 0 L-8 -16 Z"
+                                  fill="white"
+                                  stroke="#1e293b"
+                                  strokeWidth="1.5"
+                                  strokeLinejoin="round"
+                                />
+                              </g>
+                            </svg>
+                          </div>
+
+                          {/* Live readings */}
+                          <div className="flex-1 space-y-2">
+                            <div>
+                              <div className="text-[10px] uppercase tracking-wider text-slate-500">
+                                Mevcut SOC
+                              </div>
+                              <div className="text-3xl font-bold tabular-nums text-slate-900">
+                                %{animatedSoc.toFixed(1)}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <div>
+                                <div className="text-[10px] uppercase tracking-wider text-amber-700">
+                                  Anlık güç
+                                </div>
+                                <div className="text-base font-bold tabular-nums text-amber-700">
+                                  {animatedKw.toFixed(0)} kW
+                                </div>
+                              </div>
+                              <div>
+                                <div className="text-[10px] uppercase tracking-wider text-slate-500">
+                                  Geçen süre
+                                </div>
+                                <div className="text-base font-bold tabular-nums text-slate-700">
+                                  {animatedTimeMin.toFixed(1)} dk
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Progress bar */}
+                        <div className="h-2 overflow-hidden rounded-full bg-slate-200">
+                          <div
+                            className="h-full bg-gradient-to-r from-indigo-500 to-violet-500"
+                            style={{
+                              width: `${chargeProgress * 100}%`,
+                              transition: 'width 80ms linear',
+                            }}
+                          />
+                        </div>
+
+                        {/* Curve chart altta — kullanıcı görmek isterse */}
                         <ChargingCurveChart
                           points={chargingCurveQ.data.points}
                           totalMinutes={chargingCurveQ.data.total_minutes}
+                          height={80}
                         />
+
                         <div className="grid grid-cols-3 gap-2 rounded-lg bg-slate-50 p-2 text-center text-[11px]">
                           <div>
                             <div className="text-[9px] uppercase text-slate-500">
-                              Süre
+                              Toplam Süre
                             </div>
                             <div className="font-bold text-slate-900">
                               {chargingCurveQ.data.total_minutes.toFixed(0)} dk
@@ -1054,7 +1234,16 @@ export function MapView({
                               Eklenen
                             </div>
                             <div className="font-bold text-slate-900">
-                              {chargingCurveQ.data.energy_kwh.toFixed(1)} kWh
+                              {(
+                                ((animatedSoc -
+                                  (chargingStop.arrival_soc_percent ?? 0)) /
+                                  100) *
+                                (chargingCurveQ.data.energy_kwh /
+                                  ((chargingStop.target_soc_percent ?? 100) -
+                                    (chargingStop.arrival_soc_percent ?? 0)) *
+                                  100)
+                              ).toFixed(1)}{' '}
+                              / {chargingCurveQ.data.energy_kwh.toFixed(1)} kWh
                             </div>
                           </div>
                           <div>
@@ -1078,12 +1267,17 @@ export function MapView({
                 </div>
 
                 {/* Footer */}
-                <div className="flex items-center justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3">
+                <div className="flex items-center justify-between gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3">
+                  <span className="text-[10px] text-slate-500">
+                    {chargeProgress >= 1
+                      ? 'Şarj tamamlandı! Devam ediliyor…'
+                      : 'Şarj devam ediyor…'}
+                  </span>
                   <button
                     onClick={handleChargingDone}
                     className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-indigo-500"
                   >
-                    Şarjı tamamla → Devam et
+                    {chargeProgress >= 1 ? 'Devam et' : 'Atla → Devam et'}
                   </button>
                 </div>
               </div>
