@@ -103,9 +103,14 @@ class ChargingCurveService:
         target_soc_pct: float,
         usable_battery_kwh: float,
         *,
-        step_pct: float = 0.5,
+        step_pct: float = 2.0,
     ) -> float:
-        """Riemann toplam ile şarj süresi (dakika)."""
+        """Riemann toplam ile sarj suresi (dakika).
+
+        Default step_pct=2.0; her aday istasyon x strateji icin 12k+ iterasyon
+        yerine ~3k. Hata < %1 (test_compute_charge_minutes_step_2_within_1pct).
+        UI tarafi (frontend grafigi) gerekirse step_pct=0.5 ile cagirabilir.
+        """
         if (
             target_soc_pct <= start_soc_pct
             or usable_battery_kwh <= 0
