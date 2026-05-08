@@ -4,7 +4,11 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from app.core.geo_utils import RoutePoint, haversine_km as _haversine_km
+from app.core.geo_utils import (
+    RoutePoint,
+    RouteSpatialIndex,
+    haversine_km as _haversine_km,
+)
 from app.core.utils import pick as _pick, safe_float as _safe_float
 
 
@@ -179,6 +183,7 @@ class ChargingStopSelector:
         )
 
         route_points = self._build_route_points(route)
+        spatial_index = RouteSpatialIndex(route_points) if route_points else None
         usable_battery_kwh = _safe_float(
             _pick(vehicle, "usable_battery_kwh", "battery_capacity_kwh"),
             0.0,
@@ -206,6 +211,7 @@ class ChargingStopSelector:
                 vehicle=vehicle,
                 strategy=strategy,
                 vehicle_connectors=vehicle_connectors,
+                spatial_index=spatial_index,
             )
             if candidate is not None:
                 enriched_candidates.append(candidate)
@@ -293,6 +299,7 @@ class ChargingStopSelector:
         vehicle: Dict[str, Any],
         strategy: str,
         vehicle_connectors: Optional[set] = None,
+        spatial_index: Optional[RouteSpatialIndex] = None,
     ) -> Optional[Dict[str, Any]]:
         # HARD filter: arac soket tipi istasyondaki en az bir bagliyla esleshmeli.
         # Bos vehicle_connectors -> kontrol atlanir (geri uyumluluk).
@@ -305,6 +312,7 @@ class ChargingStopSelector:
         distance_along_route_km, distance_from_route_km = self._resolve_station_route_metrics(
             station=station,
             route_points=route_points,
+            spatial_index=spatial_index,
         )
 
         if distance_along_route_km is None:
@@ -418,6 +426,7 @@ class ChargingStopSelector:
         *,
         station: Dict[str, Any],
         route_points: List[RoutePoint],
+        spatial_index: Optional[RouteSpatialIndex] = None,
     ) -> Tuple[Optional[float], float]:
         # Eğer charging_service zaten hesapladıysa direkt onu kullan.
         precomputed_along = _pick(
@@ -443,11 +452,15 @@ class ChargingStopSelector:
         station_lat = _safe_float(_pick(station, "lat", "latitude"), 0.0)
         station_lon = _safe_float(_pick(station, "lon", "lng", "longitude"), 0.0)
 
+        if spatial_index is not None:
+            nearest_point, offset_km = spatial_index.nearest(station_lat, station_lon)
+            return nearest_point.cumulative_distance_km, offset_km
+
+        # Fallback: lineer tarama (route_points kucukse veya scipy yoksa).
         nearest_point = min(
             route_points,
             key=lambda p: _haversine_km(station_lat, station_lon, p.lat, p.lon),
         )
-
         offset_km = _haversine_km(station_lat, station_lon, nearest_point.lat, nearest_point.lon)
         return nearest_point.cumulative_distance_km, offset_km
 

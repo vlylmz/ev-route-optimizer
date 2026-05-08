@@ -87,3 +87,44 @@ def build_route_points(raw_points: Iterable[Any]) -> List[RoutePoint]:
         prev = (lat, lon)
 
     return points
+
+
+class RouteSpatialIndex:
+    """Rota route_points'i uzerinde O(log n) en yakin nokta sorgusu.
+
+    Eskiden her istasyon icin tum route_points'i taraniyordu (O(n*m));
+    KDTree (scipy) ile O(n*log m). Buyuk rotalar icin onemli kazanim.
+    """
+
+    def __init__(self, route_points: List[RoutePoint]) -> None:
+        self.route_points = route_points
+        self._tree = None
+        if not route_points:
+            return
+        try:
+            from scipy.spatial import cKDTree
+            import numpy as np
+
+            coords = np.array([(p.lat, p.lon) for p in route_points], dtype=float)
+            self._tree = cKDTree(coords)
+        except ImportError:
+            self._tree = None
+
+    def nearest(self, lat: float, lon: float) -> Tuple[RoutePoint, float]:
+        """En yakin route_point + (km cinsinden) gercek haversine mesafesi."""
+        if not self.route_points:
+            raise ValueError("Index bos.")
+
+        if self._tree is not None:
+            # KDTree euclidean degree fark uzerinden -> sadece *index*'i alirken
+            # kullaniyoruz; gercek mesafeyi haversine ile hesapliyoruz.
+            _, idx = self._tree.query([lat, lon], k=1)
+            nearest_point = self.route_points[int(idx)]
+        else:
+            nearest_point = min(
+                self.route_points,
+                key=lambda p: haversine_km(lat, lon, p.lat, p.lon),
+            )
+
+        offset_km = haversine_km(lat, lon, nearest_point.lat, nearest_point.lon)
+        return nearest_point, offset_km
