@@ -22,11 +22,16 @@ class RouteContextService:
         elevation_service: Optional[OpenElevationService] = None,
         weather_service: Optional[OpenMeteoWeatherService] = None,
         charging_service: Optional[OpenChargeMapService] = None,
+        station_cache_ttl_seconds: float = 3600.0,
     ) -> None:
         self.routing_service = routing_service or OSRMRoutingService()
         self.elevation_service = elevation_service or OpenElevationService()
         self.weather_service = weather_service or OpenMeteoWeatherService()
         self.charging_service = charging_service or OpenChargeMapService()
+        self.station_cache_ttl_seconds = station_cache_ttl_seconds
+        # Key: (start_round, end_round, distance_km, query_every_n).
+        # Value: (timestamp, station_dicts).
+        self._station_cache: Dict[tuple, tuple] = {}
 
     def build_route_context(
         self,
@@ -77,15 +82,16 @@ class RouteContextService:
         except Exception:  # noqa: BLE001
             weather = self._build_default_weather_fallback(weather_points)
 
-        # 4) Şarj istasyonları
-        stations_raw = self.charging_service.find_stations_along_route(
+        # 4) Şarj istasyonları (TTL cache: ayni rota + ayni mesafe -> OCM atlanir)
+        stations = self._cached_find_stations(
+            start=start,
+            end=end,
             sampled_geometry=sampled_geometry,
             query_every_n_points=station_query_every_n_points,
             distance_km=station_distance_km,
             max_results_per_query=station_max_results_per_query,
-            allow_fallback=allow_station_fallback,
+            allow_station_fallback=allow_station_fallback,
         )
-        stations = [self.charging_service.station_to_dict(s) for s in stations_raw]
 
         # 5) Özet metrikler
         slope_summary = self._build_slope_summary(elevation["slope_segments"])
@@ -119,6 +125,45 @@ class RouteContextService:
                 "max_downhill_grade_pct": slope_summary["max_downhill_grade_pct"],
             },
         }
+
+    def _cached_find_stations(
+        self,
+        *,
+        start: Coordinate,
+        end: Coordinate,
+        sampled_geometry: List[Coordinate],
+        query_every_n_points: int,
+        distance_km: float,
+        max_results_per_query: int,
+        allow_station_fallback: bool,
+    ) -> List[Dict[str, Any]]:
+        """OCM cevresinde TTL cache. Key: rounded coords + distance + step."""
+        import time
+
+        # ~100m hassasiyet (3 ondalik), istasyon ayar degisiklikleri yavas olur.
+        cache_key = (
+            round(start[0], 3), round(start[1], 3),
+            round(end[0], 3), round(end[1], 3),
+            round(distance_km, 1),
+            int(query_every_n_points),
+        )
+        now = time.time()
+        cached = self._station_cache.get(cache_key)
+        if cached is not None:
+            ts, stations = cached
+            if now - ts < self.station_cache_ttl_seconds:
+                return [dict(s) for s in stations]
+
+        stations_raw = self.charging_service.find_stations_along_route(
+            sampled_geometry=sampled_geometry,
+            query_every_n_points=query_every_n_points,
+            distance_km=distance_km,
+            max_results_per_query=max_results_per_query,
+            allow_fallback=allow_station_fallback,
+        )
+        stations = [self.charging_service.station_to_dict(s) for s in stations_raw]
+        self._station_cache[cache_key] = (now, [dict(s) for s in stations])
+        return stations
 
     @staticmethod
     def _select_weather_points(

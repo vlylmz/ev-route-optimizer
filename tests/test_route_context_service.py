@@ -124,3 +124,68 @@ def test_build_route_context_with_mocked_services():
     assert context["summary"]["max_uphill_grade_pct"] == 0.1
     assert context["summary"]["max_downhill_grade_pct"] == -0.16
     assert len(context["stations"]) == 2
+
+
+def test_route_context_cache_hit_skips_ocm_call():
+    """Ayni rota icin ikinci build_route_context: rota cagrilir, OCM atlanir."""
+
+    class DummyRoutingService:
+        def __init__(self):
+            self.call_count = 0
+
+        def get_route_dict(self, start, end):
+            self.call_count += 1
+            return {
+                "distance_km": 100.0,
+                "duration_min": 90.0,
+                "geometry": [(39.92, 32.85), (39.78, 30.52)],
+                "geometry_point_count": 2,
+                "waypoints": [],
+            }
+
+    class DummyElevationService:
+        def get_elevation_and_slope(self, geometry, min_spacing_km=5.0, max_points=60):
+            return {
+                "sampled_point_count": 2,
+                "sampled_geometry": geometry,
+                "elevation_profile": [],
+                "slope_segments": [
+                    {"start": geometry[0], "end": geometry[1], "distance_km": 100.0,
+                     "elevation_start_m": 0, "elevation_end_m": 0, "elevation_delta_m": 0,
+                     "grade_pct": 0},
+                ],
+            }
+
+    class DummyWeatherService:
+        def summarize_route_temperature(self, coords):
+            return {"point_count": len(coords), "min_temp_c": 10, "max_temp_c": 15,
+                    "avg_temp_c": 12.5, "points": []}
+
+    class CountingChargingService:
+        def __init__(self):
+            self.call_count = 0
+
+        def find_stations_along_route(self, **kwargs):
+            self.call_count += 1
+            return []
+
+        def station_to_dict(self, station):
+            return {}
+
+    routing = DummyRoutingService()
+    charging = CountingChargingService()
+    service = RouteContextService(
+        routing_service=routing,
+        elevation_service=DummyElevationService(),
+        weather_service=DummyWeatherService(),
+        charging_service=charging,
+    )
+
+    coords = ((39.9208, 32.8541), (39.7767, 30.5206))
+
+    service.build_route_context(start=coords[0], end=coords[1])
+    service.build_route_context(start=coords[0], end=coords[1])
+
+    # Rota her seferinde cagrilir; OCM ikinci sefer cache'den okunur.
+    assert routing.call_count == 2
+    assert charging.call_count == 1
