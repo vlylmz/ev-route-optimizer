@@ -33,6 +33,58 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * r * atan2(sqrt(a), sqrt(1 - a))
 
 
+# Kabaca match: OCM "CCS (Type 2)" gibi degerleri "CCS2" anahtarina yansitir.
+_CONNECTOR_PATTERNS = {
+    "CCS2": ("CCS",),
+    "CCS1": ("CCS Type 1",),
+    "CHAdeMO": ("CHADEMO",),
+    "Type 2": ("TYPE 2", "MENNEKES"),
+    "Type 1": ("TYPE 1", "J1772"),
+    "Tesla": ("TESLA",),
+}
+
+
+def _normalize_connector_label(raw: str) -> Optional[str]:
+    if not raw:
+        return None
+    upper = raw.upper()
+    for canonical, patterns in _CONNECTOR_PATTERNS.items():
+        for pattern in patterns:
+            if pattern in upper:
+                return canonical
+    return None
+
+
+def _extract_station_connectors(station: Dict[str, Any]) -> set:
+    """Station dict'inden normalize edilmis connector setini cikarir."""
+    connections = _pick(station, "connections", "Connections", default=[]) or []
+    result: set = set()
+    for conn in connections:
+        if not isinstance(conn, dict):
+            continue
+        raw = _pick(conn, "connection_type", "ConnectionType", default=None)
+        if isinstance(raw, dict):
+            raw = raw.get("Title") or raw.get("FormalName")
+        canonical = _normalize_connector_label(raw or "")
+        if canonical:
+            result.add(canonical)
+    # Bazi cache'lenmis station'larda connections olmayabilir; en azindan
+    # legacy alan varsa onu da kullan.
+    legacy = _pick(station, "connector", "connector_type", default=None)
+    if legacy:
+        canonical = _normalize_connector_label(str(legacy))
+        if canonical:
+            result.add(canonical)
+    return result
+
+
+def _vehicle_connector_set(vehicle: Dict[str, Any]) -> set:
+    """Vehicle dict'inden DC + AC connector setini birlestirir."""
+    dc = vehicle.get("dc_connectors") or ["CCS2"]
+    ac = vehicle.get("ac_connectors") or ["Type 2"]
+    return {_normalize_connector_label(c) or c for c in list(dc) + list(ac)}
+
+
 @dataclass
 class RoutePoint:
     lat: float
@@ -167,6 +219,8 @@ class ChargingStopSelector:
             vehicle=vehicle,
         )
 
+        vehicle_connectors = _vehicle_connector_set(vehicle)
+
         enriched_candidates: List[Dict[str, Any]] = []
         for station in stations:
             candidate = self._enrich_station(
@@ -180,6 +234,7 @@ class ChargingStopSelector:
                 avg_consumption_kwh_per_km=avg_consumption_kwh_per_km,
                 vehicle=vehicle,
                 strategy=strategy,
+                vehicle_connectors=vehicle_connectors,
             )
             if candidate is not None:
                 enriched_candidates.append(candidate)
@@ -264,7 +319,16 @@ class ChargingStopSelector:
         avg_consumption_kwh_per_km: float,
         vehicle: Dict[str, Any],
         strategy: str,
+        vehicle_connectors: Optional[set] = None,
     ) -> Optional[Dict[str, Any]]:
+        # HARD filter: arac soket tipi istasyondaki en az bir bagliyla esleshmeli.
+        # Bos vehicle_connectors -> kontrol atlanir (geri uyumluluk).
+        if vehicle_connectors:
+            station_connectors = _extract_station_connectors(station)
+            # Station connector verisi yoksa filtreleme (eski cache'lenmis kayit).
+            if station_connectors and not vehicle_connectors.intersection(station_connectors):
+                return None
+
         distance_along_route_km, distance_from_route_km = self._resolve_station_route_metrics(
             station=station,
             route_points=route_points,

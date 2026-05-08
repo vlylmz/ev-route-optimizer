@@ -379,7 +379,9 @@
       "wltp_range_km": 270,
       "temp_penalty_factor": 0.009,
       "charge_curve_hint": "tapered_nmc",
-      "default_hvac_load_kw": 1.1
+      "default_hvac_load_kw": 1.1,
+      "dc_connectors": ["CHAdeMO"],
+      "ac_connectors": ["Type 2"]
     },
     {
       "id": "polestar_2_lr_rwd",

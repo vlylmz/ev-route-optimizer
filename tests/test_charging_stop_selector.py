@@ -144,6 +144,70 @@ def test_operational_false_station_is_filtered_out():
     assert result["candidates"] == []
 
 
+def test_socket_type_mismatch_eliminates_candidate():
+    """Vehicle CHAdeMO bekliyorsa CCS-only istasyon aday olamaz."""
+    selector = ChargingStopSelector()
+    vehicle, route_context, simulation_result, charge_need = build_common_data()
+    vehicle["dc_connectors"] = ["CHAdeMO"]
+    vehicle["ac_connectors"] = ["Type 2"]
+
+    route_context["stations"] = [
+        {
+            "name": "CCS Only Hizli",
+            "distance_along_route_km": 150,
+            "distance_from_route_km": 0.5,
+            "power_kw": 180,
+            "is_operational": True,
+            "connections": [
+                {"connection_type": "CCS (Type 2)", "power_kw": 180},
+            ],
+        },
+    ]
+
+    result = selector.select_stop(
+        vehicle=vehicle,
+        route_context=route_context,
+        simulation_result=simulation_result,
+        charge_need=charge_need,
+        strategy="balanced",
+    )
+
+    assert result["selected_station"] is None
+    assert result["candidates"] == []
+
+
+def test_socket_type_match_passes_filter():
+    """Vehicle CCS2 ve istasyonda CCS varsa aday gecmeli."""
+    selector = ChargingStopSelector()
+    vehicle, route_context, simulation_result, charge_need = build_common_data()
+    vehicle["dc_connectors"] = ["CCS2"]
+    vehicle["ac_connectors"] = ["Type 2"]
+
+    route_context["stations"] = [
+        {
+            "name": "CCS Hizli",
+            "distance_along_route_km": 150,
+            "distance_from_route_km": 0.5,
+            "power_kw": 180,
+            "is_operational": True,
+            "connections": [
+                {"connection_type": "CCS (Type 2)", "power_kw": 180},
+            ],
+        },
+    ]
+
+    result = selector.select_stop(
+        vehicle=vehicle,
+        route_context=route_context,
+        simulation_result=simulation_result,
+        charge_need=charge_need,
+        strategy="balanced",
+    )
+
+    assert result["selected_station"] is not None
+    assert result["selected_station"]["name"] == "CCS Hizli"
+
+
 def test_operational_false_excluded_when_other_candidates_exist():
     """Birden fazla aday varsa operational=False olan candidates listesinde olmamali."""
     selector = ChargingStopSelector()

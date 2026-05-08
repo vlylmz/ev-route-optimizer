@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -46,6 +46,8 @@ class Vehicle:
     temp_penalty_factor: float
     charge_curve_hint: str
     default_hvac_load_kw: float
+    dc_connectors: List[str] = field(default_factory=lambda: ["CCS2"])
+    ac_connectors: List[str] = field(default_factory=lambda: ["Type 2"])
 
     @property
     def full_name(self) -> str:
@@ -79,6 +81,8 @@ class Vehicle:
             temp_penalty_factor=float(data["temp_penalty_factor"]),
             charge_curve_hint=data["charge_curve_hint"],
             default_hvac_load_kw=float(data["default_hvac_load_kw"]),
+            dc_connectors=list(data.get("dc_connectors", ["CCS2"])),
+            ac_connectors=list(data.get("ac_connectors", ["Type 2"])),
         )
 
 

@@ -3,6 +3,11 @@ from __future__ import annotations
 from math import atan2, cos, radians, sin, sqrt
 from typing import Any, Dict, List, Optional
 
+from app.core.charging_stop_selector import (
+    _extract_station_connectors,
+    _vehicle_connector_set,
+)
+
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
     try:
@@ -171,7 +176,15 @@ class ChargingPlanner:
             _pick(charge_need, "target_arrival_soc_pct", default=None),
             reserve_soc,
         )
-        effective_arrival_floor = max(reserve_soc, target_arrival_soc)
+        # Strateji bazli arrival bonus — dengeli profil ekstra %10 marj ister,
+        # boylece tek-stop ile sinirda gecmek yerine multi-stop tercih eder
+        # (Hizli ile ayrismis olur).
+        strategy_arrival_bonus = (
+            10.0 if strategy == "balanced" else 0.0
+        )
+        effective_arrival_floor = (
+            max(reserve_soc, target_arrival_soc) + strategy_arrival_bonus
+        )
 
         station_name = _pick(selected_station, "name", "title", default="İstasyon")
         distance_along_route_km = _safe_float(
@@ -208,11 +221,10 @@ class ChargingPlanner:
         )
 
         # Min duraklama süresi: kullanıcı 1-2 dk için durmaz.
-        # Süre çok kısaysa, target SOC'yi yükselt.
+        # Süre çok kısaysa, target SOC'yi yükselt — gerekirse %90'a kadar.
         if (
             self.min_stop_minutes > 0
             and charge_minutes < self.min_stop_minutes
-            and target_soc_percent < 85.0
             and station_power_kw > 0
         ):
             extended_target = self.curve_service.find_target_soc_for_minutes(
@@ -221,7 +233,7 @@ class ChargingPlanner:
                 start_soc_pct=arrival_soc_at_station,
                 target_minutes=self.min_stop_minutes,
                 usable_battery_kwh=usable_battery_kwh,
-                max_target=85.0,
+                max_target=90.0,
             )
             if extended_target > target_soc_percent:
                 target_soc_percent = extended_target
@@ -316,6 +328,29 @@ class ChargingPlanner:
         if multi_stop_result is not None and multi_stop_result.get("feasible"):
             return multi_stop_result
 
+        # Hem tek-durak hem cok-durakli infeasible. Multi-stop genelde tek-stop'tan
+        # daha bilgili (birden cok durak listesi gosteriyor); en yuksek varis SOC'i
+        # olani sec. Boylece "%0 varis tek durak" yerine "%marjinal cok durak" gosteririz.
+        if multi_stop_result is not None and multi_stop_result.get("recommended_stops"):
+            single_arrival = _safe_float(
+                _pick(
+                    single_stop_result.get("summary", {}),
+                    "projected_arrival_soc_percent",
+                    default=0.0,
+                ),
+                0.0,
+            )
+            multi_arrival = _safe_float(
+                _pick(
+                    multi_stop_result.get("summary", {}),
+                    "projected_arrival_soc_percent",
+                    default=0.0,
+                ),
+                0.0,
+            )
+            if multi_arrival > single_arrival:
+                return multi_stop_result
+
         return single_stop_result
 
     def _try_multi_stop(
@@ -347,7 +382,9 @@ class ChargingPlanner:
         if route_distance_km <= 0:
             return None
 
-        enriched = self._enrich_all_stations(route_context=route_context)
+        enriched = self._enrich_all_stations(
+            route_context=route_context, vehicle=vehicle
+        )
         if not enriched:
             return None
 
@@ -373,20 +410,24 @@ class ChargingPlanner:
             # En kisa toplam sure: yuksek guc istasyonlari, kucuk marj
             soc_buffer = 1.5
             max_target_soc = 75.0
+            arrival_bonus = 0.0
         elif strategy == "efficient":
             # En dusuk enerji/sapma: dusuk sapmali istasyonlar, daha tutucu marj
             soc_buffer = 3.0
             max_target_soc = 70.0
+            arrival_bonus = 0.0
         else:  # balanced
             soc_buffer = 2.0
             max_target_soc = 80.0
+            arrival_bonus = 10.0  # ekstra guvenlik marji — varisi %10 yukari ittir
         max_stops = 5
 
         # Varişta tutulacak minimum SOC: reserve ile target'in büyüğü
+        # + dengeli icin ek guvenlik bonusu (boylece duraklar arasi marjin yukari cikar)
         effective_arrival_floor = max(
             reserve_soc,
             float(target_arrival_soc) if target_arrival_soc is not None else 0.0,
-        )
+        ) + arrival_bonus
 
         stops: List[Dict[str, Any]] = []
         current_distance = 0.0
@@ -424,27 +465,89 @@ class ChargingPlanner:
             if not candidates:
                 return None  # cok durakli plan da kuramiyoruz
 
-            # Stratejiye gore istasyon secimi
+            # Faydasiz erken duraklari ele: ulasilabilir mesafenin son %40'inda
+            # olmayan stoplari at. Battery'yi yeterince kullanmadan duraklarsak
+            # 0-1 dk sarjli bos stoplar olusuyor; bu filtre onu engeller.
+            useful_threshold_km = current_distance + max_reachable_km * 0.6
+            useful = [
+                s
+                for s in candidates
+                if s["distance_along_route_km"] >= useful_threshold_km
+            ]
+            if not useful:
+                useful = candidates  # esige hicbiri ulasamiyorsa fallback
+
+            # Strateji bazli secim
+            # "Fast" icin yuksek-guc istasyonlar oncelik (≥100kW). Boylece
+            # "fast" ve "efficient" ayni 22kW yavas istasyonu secip benzemiyor.
             if strategy == "fast":
-                # En yuksek guc → en hizli sarj; esitlikte en uzak
-                candidates.sort(
-                    key=lambda s: (-s["power_kw"], -s["distance_along_route_km"])
-                )
+                high_power = [
+                    s
+                    for s in useful
+                    if _safe_float(s.get("power_kw"), 0.0) >= 100.0
+                ]
+                if high_power:
+                    useful = high_power
+
+            if strategy == "fast":
+                # Toplam ek sure (detour + efektif sarj suresi) minimize et —
+                # sadece guc bakmak yetmez, sapma 350 kW istasyona gitmek de pahali.
+                # Sarj suresi min_stop_minutes esigine clamp edilir (gerc-life: 10dk
+                # altindaysa zaten min stop kuralina takilip uzayacak).
+                min_stop = self.min_stop_minutes
+
+                def fast_total_time_score(s: Dict[str, Any]) -> float:
+                    detour_min = (
+                        _safe_float(s.get("detour_distance_km"), 0.0) / 40.0
+                    ) * 60.0
+                    leg_km = max(
+                        s["distance_along_route_km"] - current_distance, 0.0
+                    )
+                    soc_drop = (
+                        (leg_km * avg_consumption_kwh_per_km) / usable_battery_kwh
+                    ) * 100.0
+                    arrival = max(current_soc - soc_drop, 0.0)
+                    remaining_after = max(
+                        route_distance_km - s["distance_along_route_km"], 0.0
+                    )
+                    soc_need_after = (
+                        (
+                            remaining_after
+                            * avg_consumption_kwh_per_km
+                            * self.energy_buffer_factor
+                        )
+                        / usable_battery_kwh
+                    ) * 100.0
+                    target = min(
+                        soc_need_after + effective_arrival_floor, max_target_soc
+                    )
+                    target = max(target, arrival)
+                    delta_kwh = (
+                        max(target - arrival, 0.0) / 100.0 * usable_battery_kwh
+                    )
+                    power = max(_safe_float(s.get("power_kw"), 50.0), 1.0)
+                    # 1.4 = ortalama taper faktoru (egri %50+ icin yavaslar)
+                    charge_min = (delta_kwh / power) * 60.0 * 1.4
+                    # Min stop kurali: 10dk altinda olamaz, gercek planda uzayacak
+                    if min_stop > 0:
+                        charge_min = max(charge_min, min_stop)
+                    return detour_min + charge_min
+
+                useful.sort(key=fast_total_time_score)
             elif strategy == "efficient":
-                # En dusuk sapma (rotaya yakin) → ek mesafe minimum;
-                # esitlikte en uzak ki durak sayisi azalsin
-                candidates.sort(
+                # En dusuk sapma → ek enerji minimum; esitlikte en uzak
+                useful.sort(
                     key=lambda s: (
-                        s.get("detour_distance_km", 0.0),
+                        _safe_float(s.get("detour_distance_km"), 0.0),
                         -s["distance_along_route_km"],
                     )
                 )
             else:  # balanced
                 # En uzaktan basla, esitlikte en gucluyu sec
-                candidates.sort(
+                useful.sort(
                     key=lambda s: (-s["distance_along_route_km"], -s["power_kw"])
                 )
-            selected = candidates[0]
+            selected = useful[0]
 
             leg_km = selected["distance_along_route_km"] - current_distance
             soc_drop_pct = (
@@ -464,12 +567,14 @@ class ChargingPlanner:
                 )
                 / usable_battery_kwh
             ) * 100.0
-            # Bu son durak ise varış marji effective_arrival_floor (target),
-            # değilse sadece in-trip reserve_soc yeterli (sonraki stop'ta tekrar şarj olur).
-            # Pratik: her durakta target'a göre planla, gereksiz stop oluşmasın.
-            target_soc = min(
-                soc_to_finish_after_pct + effective_arrival_floor, max_target_soc
-            )
+            # Hedef SOC: kalan mesafeyi tamamlayacak + arrival floor (target_arrival)
+            # Strateji limiti (max_target_soc) ihtiyactan az kalirsa %90'a kadar
+            # gevseklet — yoksa ihtiyac karsilanmaz, gereksiz ek durak eklenir.
+            needed_target = soc_to_finish_after_pct + effective_arrival_floor
+            if needed_target <= max_target_soc:
+                target_soc = needed_target  # ihtiyac kadar (overcharge etme)
+            else:
+                target_soc = min(needed_target, 90.0)  # ihtiyac fazla → gevsek
             target_soc = max(target_soc, soc_at_arrival)
 
             station_power_kw = max(_safe_float(selected.get("power_kw"), 50.0), 1.0)
@@ -482,20 +587,17 @@ class ChargingPlanner:
                 usable_battery_kwh=usable_battery_kwh,
             )
             # Min duraklama süresi: kullanıcı 1-2 dk için durmaz.
-            # Süre çok kısaysa, target SOC'yi yükselt — daha çok şarj eklenir,
-            # sonraki segmentlerde belki bir durak daha az gerekecek.
-            if (
-                self.min_stop_minutes > 0
-                and charge_minutes < self.min_stop_minutes
-                and target_soc < max_target_soc
-            ):
+            # Süre çok kısaysa, target SOC'yi yükselt — gerekirse %90'a kadar
+            # cik (max_target_soc'yi gevsetiyoruz, yoksa zaten max'taysak min
+            # stop garantisi tutmuyor ve 0-1 dk durak cikiyor).
+            if self.min_stop_minutes > 0 and charge_minutes < self.min_stop_minutes:
                 extended_target = self.curve_service.find_target_soc_for_minutes(
                     vehicle=vehicle,
                     station_kw=station_power_kw,
                     start_soc_pct=soc_at_arrival,
                     target_minutes=self.min_stop_minutes,
                     usable_battery_kwh=usable_battery_kwh,
-                    max_target=max_target_soc,
+                    max_target=90.0,
                 )
                 if extended_target > target_soc:
                     target_soc = extended_target
@@ -531,9 +633,9 @@ class ChargingPlanner:
 
             current_distance = selected["distance_along_route_km"]
             current_soc = target_soc
-        else:
-            # max_stops doldu ama hala bitemedik
-            return None
+        # else: max_stops doldu ama hala bitemedik — yine de elimizdeki kismi
+        # zinciri risky_plan olarak don. Tek-stop fallback'inin %0 varisindan
+        # daha bilgili (birkac durak + projected arrival) sonuc cikar.
 
         if not stops:
             return None
@@ -594,6 +696,7 @@ class ChargingPlanner:
         self,
         *,
         route_context: Dict[str, Any],
+        vehicle: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
         """Ham istasyonlara distance_along_route_km, power_kw vb. ekler."""
         raw_stations = (
@@ -605,8 +708,16 @@ class ChargingPlanner:
         route = _pick(route_context, "route", default={}) or {}
         route_points = self._build_route_points(route)
 
+        vehicle_connectors = (
+            _vehicle_connector_set(vehicle) if vehicle is not None else set()
+        )
+
         enriched: List[Dict[str, Any]] = []
         for station in raw_stations:
+            if vehicle_connectors:
+                station_connectors = _extract_station_connectors(station)
+                if station_connectors and not vehicle_connectors.intersection(station_connectors):
+                    continue
             distance_along = _pick(
                 station,
                 "distance_along_route_km",
