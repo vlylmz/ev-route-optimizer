@@ -30,6 +30,7 @@ class IRouteEnergySimulator(Protocol):
         route_context: Dict[str, Any],
         start_soc_pct: float,
         use_ml: Optional[bool] = None,
+        strategy: str = "balanced",
     ) -> Any:
         ...
 

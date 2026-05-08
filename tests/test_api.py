@@ -143,7 +143,7 @@ class FakeChargingService:
 class FakeSimulator:
     """Deterministic simulator that always yields feasible trip."""
 
-    def simulate(self, vehicle, route_context, start_soc_pct, use_ml=None):
+    def simulate(self, vehicle, route_context, start_soc_pct, use_ml=None, strategy="balanced"):
         seg1 = RouteEnergySegmentResult(
             segment_no=1,
             distance_km=60.0,
@@ -227,6 +227,10 @@ class FakeProfiles:
         simulation_result,
         charge_need,
         strategies=None,
+        simulator=None,
+        analyzer=None,
+        vehicle_obj=None,
+        initial_soc=None,
     ):
         strategy_list = list(strategies or ["fast", "efficient", "balanced"])
         profiles = {}

@@ -74,6 +74,7 @@ class RoutePlanner:
             vehicle=vehicle,
             route_context=route_context,
             initial_soc=initial_soc,
+            strategy=strategy,
         )
         simulation_result = self._normalize_simulation_result(simulation_result_raw)
 
@@ -121,6 +122,7 @@ class RoutePlanner:
             vehicle=vehicle,
             route_context=route_context,
             initial_soc=initial_soc,
+            strategy=strategy,
         )
         simulation_result = self._normalize_simulation_result(simulation_result_raw)
 
@@ -165,11 +167,13 @@ class RoutePlanner:
         vehicle: Any,
         route_context: Dict[str, Any],
         initial_soc: float,
+        strategy: str = "balanced",
     ) -> Any:
         return self.route_energy_simulator.simulate(
             vehicle=vehicle,
             route_context=route_context,
             start_soc_pct=initial_soc,
+            strategy=strategy,
         )
 
     def _analyze_charge_need(

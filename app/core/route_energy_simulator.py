@@ -53,12 +53,21 @@ class RouteEnergySimulator:
         self.model_service = model_service
         self.use_ml_default = use_ml_default
 
+    # Strateji bazli surus profili: fast = agresif, efficient = ekonomik.
+    # Hizla speed_delta etkisi nedeniyle enerji tuketimi modlar arasi farkliisiyor.
+    _STRATEGY_SPEED_FACTOR = {
+        "fast": 1.10,
+        "balanced": 1.00,
+        "efficient": 0.92,
+    }
+
     def simulate(
         self,
         vehicle: Vehicle,
         route_context: Dict[str, Any],
         start_soc_pct: float,
         use_ml: Optional[bool] = None,
+        strategy: str = "balanced",
     ) -> RouteEnergySimulationResult:
         slope_segments = route_context["elevation"]["slope_segments"]
         weather = route_context["weather"]
@@ -80,11 +89,14 @@ class RouteEnergySimulator:
         if route_distance_km <= 0:
             raise ValueError("Route distance 0 veya negatif olamaz.")
 
-        avg_speed_kmh = (
+        base_avg_speed_kmh = (
             route_distance_km / (duration_min / 60.0)
             if duration_min > 0
             else 50.0
         )
+        speed_factor = self._STRATEGY_SPEED_FACTOR.get(strategy, 1.00)
+        # Otoyolda 130km/h legal limit; nadir gerekli ise 140'a izin ver.
+        avg_speed_kmh = max(20.0, min(140.0, base_avg_speed_kmh * speed_factor))
 
         use_ml = self.use_ml_default if use_ml is None else use_ml
 

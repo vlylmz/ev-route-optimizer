@@ -242,7 +242,7 @@ def optimize_route(
         except AttributeError:
             pass  # Test fixture'larda planner yok / değiştirilemez olabilir
 
-    # 4) Profiller
+    # 4) Profiller (her strateji icin yeniden simulate -> hiz profili enerjiye yansir)
     try:
         profile_result = profiles_engine.generate_profiles(
             vehicle=vehicle_dict,
@@ -250,6 +250,10 @@ def optimize_route(
             simulation_result=simulation_dict,
             charge_need=charge_need_dict,
             strategies=req.strategies,
+            simulator=simulator,
+            analyzer=analyzer,
+            vehicle_obj=vehicle,
+            initial_soc=req.initial_soc_pct,
         )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(

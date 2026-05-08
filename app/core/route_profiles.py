@@ -61,33 +61,61 @@ class RouteProfiles:
         simulation_result: Dict[str, Any],
         charge_need: Dict[str, Any],
         strategies: Optional[Iterable[str]] = None,
+        simulator: Optional[Any] = None,
+        analyzer: Optional[Any] = None,
+        vehicle_obj: Any = None,
+        initial_soc: Optional[float] = None,
     ) -> Dict[str, Any]:
+        """
+        simulator + vehicle_obj + initial_soc verildiyse her strateji icin
+        ayri simulate cagirir; bu yontemle hiz profili (fast/efficient/balanced)
+        enerji tuketim farkina yansir. Aksi halde tek simulation_result tum
+        modlar icin kullanilir (geri uyumluluk).
+        """
         strategy_list = list(strategies or ["fast", "efficient", "balanced"])
 
         profiles: Dict[str, Dict[str, Any]] = {}
 
         for strategy in strategy_list:
+            sim_for_strategy = simulation_result
+            charge_need_for_strategy = charge_need
+
+            if simulator is not None and vehicle_obj is not None and initial_soc is not None:
+                strategy_sim_dict, strategy_charge_need = self._simulate_for_strategy(
+                    simulator=simulator,
+                    analyzer=analyzer,
+                    vehicle_obj=vehicle_obj,
+                    route_context=route_context,
+                    initial_soc=initial_soc,
+                    strategy=strategy,
+                    fallback_charge_need=charge_need,
+                )
+                if strategy_sim_dict is not None:
+                    sim_for_strategy = strategy_sim_dict
+                if strategy_charge_need is not None:
+                    charge_need_for_strategy = strategy_charge_need
+
             selector_result = self._run_selector(
                 vehicle=vehicle,
                 route_context=route_context,
-                simulation_result=simulation_result,
-                charge_need=charge_need,
+                simulation_result=sim_for_strategy,
+                charge_need=charge_need_for_strategy,
                 strategy=strategy,
             )
 
             plan_result = self._run_planner(
                 vehicle=vehicle,
                 route_context=route_context,
-                simulation_result=simulation_result,
-                charge_need=charge_need,
+                simulation_result=sim_for_strategy,
+                charge_need=charge_need_for_strategy,
                 selector_result=selector_result,
                 strategy=strategy,
             )
 
             profile_ml_summary = self._extract_ml_summary(
                 plan_result=plan_result,
-                simulation_result=simulation_result,
-                charge_need=charge_need,
+                simulation_result=sim_for_strategy,
+                charge_need=charge_need_for_strategy,
             )
 
             profiles[strategy] = {
@@ -133,6 +161,62 @@ class RouteProfiles:
                 best_by_energy=best_by_energy,
             ),
         }
+
+    def _simulate_for_strategy(
+        self,
+        *,
+        simulator: Any,
+        analyzer: Any,
+        vehicle_obj: Any,
+        route_context: Dict[str, Any],
+        initial_soc: float,
+        strategy: str,
+        fallback_charge_need: Dict[str, Any],
+    ) -> tuple:
+        """Strateji bazli yeniden simulate + analyze. Hata olursa fallback."""
+        try:
+            sim_obj = simulator.simulate(
+                vehicle=vehicle_obj,
+                route_context=route_context,
+                start_soc_pct=initial_soc,
+                strategy=strategy,
+            )
+        except Exception:
+            return None, None
+
+        sim_dict = self._dataclass_to_dict(sim_obj)
+
+        charge_need_dict: Optional[Dict[str, Any]] = None
+        if analyzer is not None:
+            try:
+                usable_battery_kwh = float(getattr(vehicle_obj, "usable_battery_kwh", 0.0))
+                reserve_soc_pct = float(getattr(vehicle_obj, "soc_min_pct", 10.0))
+                charge_need_obj = analyzer.analyze(
+                    simulation=sim_obj,
+                    usable_battery_kwh=usable_battery_kwh,
+                    reserve_soc_pct=reserve_soc_pct,
+                )
+                charge_need_dict = self._dataclass_to_dict(charge_need_obj)
+                # Kullanici override'i (ornegin target_arrival_soc_pct) korunsun.
+                for key in ("target_arrival_soc_pct",):
+                    if key in fallback_charge_need:
+                        charge_need_dict[key] = fallback_charge_need[key]
+            except Exception:
+                charge_need_dict = None
+
+        return sim_dict, charge_need_dict
+
+    @staticmethod
+    def _dataclass_to_dict(obj: Any) -> Dict[str, Any]:
+        from dataclasses import asdict, is_dataclass
+
+        if is_dataclass(obj):
+            return asdict(obj)
+        if isinstance(obj, dict):
+            return obj
+        if hasattr(obj, "__dict__"):
+            return dict(obj.__dict__)
+        return {}
 
     def _run_selector(
         self,

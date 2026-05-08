@@ -81,6 +81,26 @@ def test_route_energy_simulation_returns_valid_output():
     assert len(result.segments) == 3
 
 
+def test_fast_mode_consumes_more_energy_than_efficient():
+    """Hiz profili: fast > balanced > efficient enerji tuketimi."""
+    simulator = RouteEnergySimulator()
+    vehicle = sample_vehicle()
+    route_context = sample_route_context()
+
+    fast = simulator.simulate(
+        vehicle=vehicle, route_context=route_context, start_soc_pct=80.0, strategy="fast"
+    )
+    balanced = simulator.simulate(
+        vehicle=vehicle, route_context=route_context, start_soc_pct=80.0, strategy="balanced"
+    )
+    efficient = simulator.simulate(
+        vehicle=vehicle, route_context=route_context, start_soc_pct=80.0, strategy="efficient"
+    )
+
+    assert fast.total_energy_kwh > balanced.total_energy_kwh
+    assert balanced.total_energy_kwh > efficient.total_energy_kwh
+
+
 def test_route_energy_simulation_flags_low_soc():
     simulator = RouteEnergySimulator()
     vehicle = sample_vehicle()

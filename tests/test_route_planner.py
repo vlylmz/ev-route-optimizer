@@ -23,7 +23,7 @@ class FakeRouteContextService:
 
 
 class FakeRouteEnergySimulator:
-    def simulate(self, *, vehicle, route_context, start_soc_pct, use_ml=None):
+    def simulate(self, *, vehicle, route_context, start_soc_pct, use_ml=None, strategy="balanced"):
         return {
             "initial_soc": start_soc_pct,
             "total_energy_kwh": 52,
@@ -133,7 +133,7 @@ def test_route_planner_skips_selector_when_charge_not_needed():
     assert selector.called is False
 def test_route_planner_propagates_ml_summary():
     class FakeRouteEnergySimulatorWithML:
-        def simulate(self, *, vehicle, route_context, start_soc_pct, use_ml=None):
+        def simulate(self, *, vehicle, route_context, start_soc_pct, use_ml=None, strategy="balanced"):
             return {
                 "initial_soc": start_soc_pct,
                 "final_soc": 18,
