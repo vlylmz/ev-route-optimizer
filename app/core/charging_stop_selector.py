@@ -1,38 +1,11 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
-from math import atan2, cos, radians, sin, sqrt
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-
-def _safe_float(value: Any, default: float = 0.0) -> float:
-    try:
-        if value is None:
-            return default
-        return float(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _pick(data: Dict[str, Any], *keys: str, default: Any = None) -> Any:
-    for key in keys:
-        if key in data and data[key] is not None:
-            return data[key]
-    return default
-
-
-def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    r = 6371.0
-    d_lat = radians(lat2 - lat1)
-    d_lon = radians(lon2 - lon1)
-
-    a = (
-        sin(d_lat / 2) ** 2
-        + cos(radians(lat1)) * cos(radians(lat2)) * sin(d_lon / 2) ** 2
-    )
-    return 2 * r * atan2(sqrt(a), sqrt(1 - a))
+from app.core.geo_utils import RoutePoint, haversine_km as _haversine_km
+from app.core.utils import pick as _pick, safe_float as _safe_float
 
 
 # Kabaca match: OCM "CCS (Type 2)" gibi degerleri "CCS2" anahtarina yansitir.
@@ -85,13 +58,6 @@ def _vehicle_connector_set(vehicle: Dict[str, Any]) -> set:
     dc = vehicle.get("dc_connectors") or ["CCS2"]
     ac = vehicle.get("ac_connectors") or ["Type 2"]
     return {_normalize_connector_label(c) or c for c in list(dc) + list(ac)}
-
-
-@dataclass
-class RoutePoint:
-    lat: float
-    lon: float
-    cumulative_distance_km: float
 
 
 class ChargingStopSelector:

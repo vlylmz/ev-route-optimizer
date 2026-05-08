@@ -10,21 +10,10 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
+from app.core.geo_utils import haversine_km as _haversine_km
+
 
 Coordinate = Tuple[float, float]  # (lat, lon)
-
-
-def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    r = 6371.0
-    d_lat = math.radians(lat2 - lat1)
-    d_lon = math.radians(lon2 - lon1)
-    a = (
-        math.sin(d_lat / 2) ** 2
-        + math.cos(math.radians(lat1))
-        * math.cos(math.radians(lat2))
-        * math.sin(d_lon / 2) ** 2
-    )
-    return 2 * r * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
 class ChargingServiceError(Exception):

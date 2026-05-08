@@ -5,22 +5,7 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from app.core.charging_planner import ChargingPlanner
 from app.core.charging_stop_selector import ChargingStopSelector
-
-
-def _safe_float(value: Any, default: float = 0.0) -> float:
-    try:
-        if value is None:
-            return default
-        return float(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _pick(data: Dict[str, Any], *keys: str, default: Any = None) -> Any:
-    for key in keys:
-        if key in data and data[key] is not None:
-            return data[key]
-    return default
+from app.core.utils import pick as _pick, safe_float as _safe_float
 
 
 class RouteProfiles:

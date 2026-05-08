@@ -9,22 +9,7 @@ from app.core.protocols import (
     IRouteContextService,
     IRouteEnergySimulator,
 )
-
-
-def _safe_float(value: Any, default: float = 0.0) -> float:
-    try:
-        if value is None:
-            return default
-        return float(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _pick(data: Dict[str, Any], *keys: str, default: Any = None) -> Any:
-    for key in keys:
-        if key in data and data[key] is not None:
-            return data[key]
-    return default
+from app.core.utils import pick as _pick, safe_float as _safe_float
 
 
 def _to_plain(obj: Any) -> Any:

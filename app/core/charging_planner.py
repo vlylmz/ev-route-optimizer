@@ -1,39 +1,13 @@
 from __future__ import annotations
 
-from math import atan2, cos, radians, sin, sqrt
 from typing import Any, Dict, List, Optional
 
 from app.core.charging_stop_selector import (
     _extract_station_connectors,
     _vehicle_connector_set,
 )
-
-
-def _safe_float(value: Any, default: float = 0.0) -> float:
-    try:
-        if value is None:
-            return default
-        return float(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _pick(data: Dict[str, Any], *keys: str, default: Any = None) -> Any:
-    for key in keys:
-        if key in data and data[key] is not None:
-            return data[key]
-    return default
-
-
-def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    r = 6371.0
-    d_lat = radians(lat2 - lat1)
-    d_lon = radians(lon2 - lon1)
-    a = (
-        sin(d_lat / 2) ** 2
-        + cos(radians(lat1)) * cos(radians(lat2)) * sin(d_lon / 2) ** 2
-    )
-    return 2 * r * atan2(sqrt(a), sqrt(1 - a))
+from app.core.geo_utils import haversine_km as _haversine_km
+from app.core.utils import pick as _pick, safe_float as _safe_float
 
 
 class ChargingPlanner:

@@ -52,20 +52,10 @@ class OpenElevationService:
 
     @staticmethod
     def haversine_km(a: Coordinate, b: Coordinate) -> float:
-        lat1, lon1 = a
-        lat2, lon2 = b
+        """Coordinate tuple imzasiyla geo_utils.haversine_km wrapper'i."""
+        from app.core.geo_utils import haversine_km
 
-        r = 6371.0
-        phi1 = math.radians(lat1)
-        phi2 = math.radians(lat2)
-        dphi = math.radians(lat2 - lat1)
-        dlambda = math.radians(lon2 - lon1)
-
-        h = (
-            math.sin(dphi / 2) ** 2
-            + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
-        )
-        return 2 * r * math.asin(math.sqrt(h))
+        return haversine_km(a[0], a[1], b[0], b[1])
 
     def sample_geometry(
         self,

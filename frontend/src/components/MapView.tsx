@@ -11,6 +11,7 @@ import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useQuery } from '@tanstack/react-query'
 import { postChargingCurve } from '../services/api'
+import { bearingDeg, haversineKm } from '../services/geo'
 import { ChargingCurveChart } from './ChargingCurveChart'
 
 interface Station {
@@ -49,45 +50,13 @@ interface Props {
   speedLimits?: SpeedLimitSegment[]
   highlightedStops?: HighlightedStop[]
   vehicleId?: string
+  initialSocPct?: number
+  finalSocPct?: number
+  usableBatteryKwh?: number
 }
 
 const MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty'
 const ANKARA_CENTER = { lng: 32.85, lat: 39.92, zoom: 6 }
-
-function haversineKm(
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number,
-): number {
-  const r = 6371
-  const dLat = ((lat2 - lat1) * Math.PI) / 180
-  const dLon = ((lon2 - lon1) * Math.PI) / 180
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) ** 2
-  return 2 * r * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-}
-
-function bearingDeg(
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number,
-): number {
-  const φ1 = (lat1 * Math.PI) / 180
-  const φ2 = (lat2 * Math.PI) / 180
-  const λ1 = (lon1 * Math.PI) / 180
-  const λ2 = (lon2 * Math.PI) / 180
-  const y = Math.sin(λ2 - λ1) * Math.cos(φ2)
-  const x =
-    Math.cos(φ1) * Math.sin(φ2) -
-    Math.sin(φ1) * Math.cos(φ2) * Math.cos(λ2 - λ1)
-  const brng = (Math.atan2(y, x) * 180) / Math.PI
-  return (brng + 360) % 360
-}
 
 export function MapView({
   geometry,
@@ -98,6 +67,9 @@ export function MapView({
   speedLimits,
   highlightedStops = [],
   vehicleId,
+  initialSocPct,
+  finalSocPct,
+  usableBatteryKwh,
 }: Props) {
   const mapRef = useRef<MapRef | null>(null)
   const [pos, setPos] = useState<{ lat: number; lon: number } | null>(null)
@@ -660,6 +632,97 @@ export function MapView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chargeProgress])
 
+  // Sim'de o anki batarya SOC'si — başlangıç → durakların arrival/target SOC'leri
+  // arası lineer interpolasyon. Şarj sırasında animatedSoc kullanılır.
+  const currentSoc = useMemo(() => {
+    if (!simEnabled || initialSocPct == null) return null
+
+    // Şarj ediliyorsa canlı animasyon değeri (yoksa durağın varış SOC'si)
+    if (chargingStopIdx != null) {
+      if (animatedSoc > 0) return animatedSoc
+      return (
+        highlightedStops[chargingStopIdx]?.arrival_soc_percent ?? initialSocPct
+      )
+    }
+
+    const totalKm = cumulativeDistances[cumulativeDistances.length - 1] || 0
+    if (totalKm <= 0) return initialSocPct
+
+    // Mesafeye göre sıralı duraklar (orijinal indeks korunur — completedStops için)
+    const sortedStops = highlightedStops
+      .map((stop, idx) => ({ stop, idx }))
+      .filter(
+        (x) =>
+          x.stop.arrival_soc_percent != null &&
+          x.stop.target_soc_percent != null,
+      )
+      .sort(
+        (a, b) =>
+          a.stop.distance_along_route_km - b.stop.distance_along_route_km,
+      )
+
+    let segStartKm = 0
+    let segStartSoc = initialSocPct
+    let segEndKm = totalKm
+    let segEndSoc = finalSocPct ?? initialSocPct
+
+    for (const { stop, idx } of sortedStops) {
+      if (completedStops.has(idx)) {
+        // Bu durakta şarj olduk — sonraki bacak target'tan başlar
+        segStartKm = stop.distance_along_route_km
+        segStartSoc = stop.target_soc_percent!
+      } else if (stop.distance_along_route_km > simKm) {
+        // Yaklaşan durak — bacağın hedefi arrival SOC
+        segEndKm = stop.distance_along_route_km
+        segEndSoc = stop.arrival_soc_percent!
+        break
+      } else {
+        // Durağı geçtik ama tamamlanmadı (eşik bölgesi) — arrival SOC'ye düş
+        segStartKm = stop.distance_along_route_km
+        segStartSoc = stop.arrival_soc_percent!
+      }
+    }
+
+    if (segEndKm <= segStartKm) return segStartSoc
+    const t = Math.max(
+      0,
+      Math.min(1, (simKm - segStartKm) / (segEndKm - segStartKm)),
+    )
+    return segStartSoc + (segEndSoc - segStartSoc) * t
+  }, [
+    simEnabled,
+    initialSocPct,
+    finalSocPct,
+    simKm,
+    highlightedStops,
+    cumulativeDistances,
+    completedStops,
+    chargingStopIdx,
+    animatedSoc,
+  ])
+
+  // Sim'de bir sonraki tamamlanmamış şarj durağı + ona kalan km
+  const nextChargingStop = useMemo(() => {
+    if (!simEnabled) return null
+    const sorted = highlightedStops
+      .map((stop, idx) => ({ stop, idx }))
+      .sort(
+        (a, b) =>
+          a.stop.distance_along_route_km - b.stop.distance_along_route_km,
+      )
+    for (const { stop, idx } of sorted) {
+      if (completedStops.has(idx)) continue
+      if (stop.distance_along_route_km > simKm) {
+        return {
+          stop,
+          idx,
+          kmAway: stop.distance_along_route_km - simKm,
+        }
+      }
+    }
+    return null
+  }, [simEnabled, highlightedStops, simKm, completedStops])
+
   // Varışa kalan ROAD mesafesi (sim modunda total - simKm,
   // GPS modunda pozisyonun rota üzerindeki projeksiyonundan kalan)
   const remainingRoadKm = useMemo(() => {
@@ -756,7 +819,9 @@ export function MapView({
         onLoad={handleMapLoad}
         onDragStart={() => navigationMode && setFollowMode(false)}
       >
-        <NavigationControl position="top-right" visualizePitch />
+        {!navigationMode && (
+          <NavigationControl position="top-right" visualizePitch />
+        )}
 
         {/* Sim aktif değilse: tek parça mavi rota */}
         {routeGeoJson && !splitRoute && (
@@ -1033,7 +1098,7 @@ export function MapView({
           </div>
 
           {gpsError && (
-            <div className="pointer-events-auto absolute top-4 right-4 z-20 flex max-w-xs items-start gap-2 rounded-xl border border-amber-300 bg-white/95 px-3 py-2.5 text-xs shadow-xl backdrop-blur">
+            <div className="pointer-events-auto absolute right-4 top-16 z-20 flex max-w-xs items-start gap-2 rounded-xl border border-amber-300 bg-white/95 px-3 py-2.5 text-xs shadow-xl backdrop-blur">
               <span className="text-base leading-none">⚠</span>
               <div className="flex-1">
                 <div className="font-semibold text-amber-900">
@@ -1295,32 +1360,141 @@ export function MapView({
             </div>
           )}
 
-          {/* Sim aktifken progress göstergesi */}
+          {/* Sim aktifken birleşik üst panel: Batarya · Progress · Sıradaki Durak */}
           {simEnabled && hasRoute && (
-            <div className="pointer-events-none absolute top-4 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-1 rounded-lg bg-slate-900/85 px-4 py-2 text-white shadow-lg backdrop-blur">
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-slate-300">SİMÜLASYON</span>
-                <span className="rounded bg-indigo-600 px-1.5 py-0.5 text-[10px] font-bold">
-                  {simSpeedMul}×
-                </span>
-              </div>
-              <div className="text-sm font-bold tabular-nums">
-                {simKm.toFixed(1)} /{' '}
-                {(cumulativeDistances[cumulativeDistances.length - 1] || 0).toFixed(0)}{' '}
-                km
-              </div>
-              <div className="h-1 w-48 overflow-hidden rounded-full bg-slate-700">
-                <div
-                  className="h-full bg-emerald-500 transition-all"
-                  style={{
-                    width: `${Math.min(
-                      100,
-                      (simKm /
-                        (cumulativeDistances[cumulativeDistances.length - 1] || 1)) *
+            <div className="pointer-events-none absolute top-4 left-1/2 z-10 flex -translate-x-1/2 items-stretch overflow-hidden rounded-xl bg-slate-900/90 text-white shadow-lg backdrop-blur">
+              {/* Sol: Batarya */}
+              {currentSoc != null && (
+                <div className="flex items-center gap-2.5 border-r border-white/10 px-4 py-2.5">
+                  <svg width="26" height="38" viewBox="0 0 32 48">
+                    <rect x="11" y="0" width="10" height="4" rx="1" fill="#cbd5e1" />
+                    <rect
+                      x="2"
+                      y="4"
+                      width="28"
+                      height="42"
+                      rx="3"
+                      fill="rgba(255,255,255,0.08)"
+                      stroke="white"
+                      strokeWidth="2"
+                    />
+                    <rect
+                      x="5"
+                      y={7 + ((100 - currentSoc) / 100) * 36}
+                      width="22"
+                      height={(currentSoc / 100) * 36}
+                      rx="1"
+                      fill={
+                        currentSoc < 20
+                          ? '#ef4444'
+                          : currentSoc < 50
+                          ? '#eab308'
+                          : '#22c55e'
+                      }
+                      style={{ transition: 'all 120ms linear' }}
+                    />
+                    {chargingStopIdx != null && (
+                      <g transform="translate(16 25)">
+                        <path
+                          d="M-4 -8 L2 -1 L-1 -1 L3 8 L-3 1 L0 1 L-4 -8 Z"
+                          fill="white"
+                          className="animate-pulse"
+                        />
+                      </g>
+                    )}
+                  </svg>
+                  <div className="leading-tight">
+                    <div className="flex items-center gap-1">
+                      <span className="text-[9px] uppercase tracking-wider text-slate-400">
+                        Şarj
+                      </span>
+                      {chargingStopIdx != null && (
+                        <span className="rounded bg-amber-500/90 px-1 py-px text-[8px] font-bold text-slate-900">
+                          DOLUYOR
+                        </span>
+                      )}
+                    </div>
+                    <div
+                      className={`text-lg font-bold tabular-nums ${
+                        currentSoc < 20
+                          ? 'text-red-400'
+                          : currentSoc < 50
+                          ? 'text-amber-300'
+                          : 'text-emerald-300'
+                      }`}
+                    >
+                      %{currentSoc.toFixed(0)}
+                    </div>
+                    {usableBatteryKwh != null && (
+                      <div className="text-[9px] text-slate-400 tabular-nums">
+                        {((currentSoc / 100) * usableBatteryKwh).toFixed(1)} /{' '}
+                        {usableBatteryKwh.toFixed(0)} kWh
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Orta: Sim progress */}
+              <div className="flex flex-col items-center justify-center gap-1 px-5 py-2.5">
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-slate-300">SİMÜLASYON</span>
+                  <span className="rounded bg-indigo-600 px-1.5 py-0.5 text-[10px] font-bold">
+                    {simSpeedMul}×
+                  </span>
+                </div>
+                <div className="text-sm font-bold tabular-nums">
+                  {simKm.toFixed(1)} /{' '}
+                  {(cumulativeDistances[cumulativeDistances.length - 1] || 0).toFixed(0)}{' '}
+                  km
+                </div>
+                <div className="h-1 w-44 overflow-hidden rounded-full bg-slate-700">
+                  <div
+                    className="h-full bg-emerald-500 transition-all"
+                    style={{
+                      width: `${Math.min(
                         100,
-                    )}%`,
-                  }}
-                />
+                        (simKm /
+                          (cumulativeDistances[cumulativeDistances.length - 1] || 1)) *
+                          100,
+                      )}%`,
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Sağ: Sıradaki şarj durağı */}
+              <div className="flex min-w-[140px] max-w-[180px] flex-col justify-center border-l border-white/10 px-4 py-2.5 leading-tight">
+                {nextChargingStop ? (
+                  <>
+                    <div className="flex items-center gap-1 text-[9px] uppercase tracking-wider text-slate-400">
+                      <span>⚡</span>
+                      <span>Sıradaki şarj</span>
+                    </div>
+                    <div className="text-lg font-bold tabular-nums text-amber-300">
+                      {nextChargingStop.kmAway.toFixed(1)} km
+                    </div>
+                    <div className="truncate text-[10px] text-slate-300">
+                      {nextChargingStop.stop.name}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-[9px] uppercase tracking-wider text-slate-400">
+                      🏁 Hedef
+                    </div>
+                    <div className="text-lg font-bold tabular-nums text-emerald-300">
+                      {(
+                        (cumulativeDistances[cumulativeDistances.length - 1] || 0) -
+                        simKm
+                      ).toFixed(1)}{' '}
+                      km
+                    </div>
+                    <div className="text-[10px] text-slate-300">
+                      Doğrudan varış
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           )}

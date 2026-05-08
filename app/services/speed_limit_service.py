@@ -58,18 +58,10 @@ class SpeedLimitServiceError(Exception):
 
 
 def _haversine_km(a: Coordinate, b: Coordinate) -> float:
-    r = 6371.0
-    lat1, lon1 = a
-    lat2, lon2 = b
-    d_lat = math.radians(lat2 - lat1)
-    d_lon = math.radians(lon2 - lon1)
-    h = (
-        math.sin(d_lat / 2) ** 2
-        + math.cos(math.radians(lat1))
-        * math.cos(math.radians(lat2))
-        * math.sin(d_lon / 2) ** 2
-    )
-    return 2 * r * math.atan2(math.sqrt(h), math.sqrt(1 - h))
+    """Coordinate tuple (lat, lon) imzasiyla geo_utils.haversine_km wrapper'i."""
+    from app.core.geo_utils import haversine_km
+
+    return haversine_km(a[0], a[1], b[0], b[1])
 
 
 def _parse_maxspeed(raw: Optional[str]) -> Optional[float]:
