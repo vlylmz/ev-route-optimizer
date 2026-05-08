@@ -162,6 +162,74 @@ def test_below_reserve_flag_works(vehicle):
     assert result.below_reserve is True
 
 
+def test_high_temperature_increases_consumption(vehicle):
+    """28C ustu sicaklikta klima yuku tuketimi artirir."""
+    mild = estimate_segment_energy(
+        vehicle=vehicle,
+        distance_km=40,
+        speed_kmh=100,
+        temp_c=20,
+        grade_pct=0,
+        start_soc_pct=80,
+    )
+
+    hot = estimate_segment_energy(
+        vehicle=vehicle,
+        distance_km=40,
+        speed_kmh=100,
+        temp_c=35,
+        grade_pct=0,
+        start_soc_pct=80,
+    )
+
+    assert hot.energy_used_kwh > mild.energy_used_kwh
+    assert hot.consumption_wh_km > mild.consumption_wh_km
+
+
+def test_temperature_penalty_consistent_with_heuristic_model_service(vehicle):
+    """energy_model ve ml.model_service heuristic ayni segmente +/-%5 icinde sonuc dondurmeli."""
+    from ml.model_service import ModelService
+
+    service = ModelService(enabled=False)
+
+    distance_km = 40.0
+    avg_speed_kmh = 100.0
+    temp_c = 35.0
+
+    em_result = estimate_segment_energy(
+        vehicle=vehicle,
+        distance_km=distance_km,
+        speed_kmh=avg_speed_kmh,
+        temp_c=temp_c,
+        grade_pct=0,
+        start_soc_pct=80,
+    )
+
+    vehicle_dict = {
+        "ideal_consumption_wh_km": vehicle.ideal_consumption_wh_km,
+        "temp_penalty_factor": vehicle.temp_penalty_factor,
+    }
+
+    features = {
+        "segment_length_km": distance_km,
+        "avg_speed_kmh": avg_speed_kmh,
+        "elevation_gain_m": 0.0,
+        "elevation_loss_m": 0.0,
+        "temperature_c": temp_c,
+        "soc_band": "high",
+    }
+
+    heuristic_kwh = service._heuristic_predict_energy_kwh(
+        features=features, vehicle=vehicle_dict
+    )
+
+    diff_ratio = abs(em_result.energy_used_kwh - heuristic_kwh) / em_result.energy_used_kwh
+    assert diff_ratio < 0.20, (
+        f"energy_model={em_result.energy_used_kwh:.3f}kWh "
+        f"heuristic={heuristic_kwh:.3f}kWh fark={diff_ratio*100:.1f}%"
+    )
+
+
 def test_route_energy_returns_consistent_summary(vehicle):
     route = estimate_route_energy(
         vehicle=vehicle,

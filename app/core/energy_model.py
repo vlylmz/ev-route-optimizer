@@ -14,6 +14,8 @@ from typing import Any, Dict, List, Optional
 GRAVITY = 9.81
 IDEAL_SPEED_KMH = 90.0
 TEMP_REFERENCE_C = 20.0
+HOT_TEMP_THRESHOLD_C = 28.0
+HOT_TEMP_PENALTY_PER_DEG = 0.006
 MIN_SEGMENT_KM = 0.01
 
 
@@ -212,9 +214,14 @@ def get_temp_penalty_kwh(
     temp_c: float,
 ) -> float:
     """
-    20C altı için ceza uygula.
-    20C üstü klima etkisinin HVAC tarafında temsil edildiğini varsay.
+    20C alti: soguk hava cezasi (HVAC isitma + lityum verim dususu).
+    28C ustu: sicak hava cezasi (klima asiri yuku, ML heuristic ile ayni katsayi).
+    20-28C arasi cezasiz.
     """
+    if temp_c > HOT_TEMP_THRESHOLD_C:
+        hot_diff = temp_c - HOT_TEMP_THRESHOLD_C
+        return base_consumption_kwh * HOT_TEMP_PENALTY_PER_DEG * hot_diff
+
     temp_diff = max(0.0, TEMP_REFERENCE_C - temp_c)
     return base_consumption_kwh * vehicle.temp_penalty_factor * temp_diff
 
