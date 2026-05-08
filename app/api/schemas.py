@@ -225,6 +225,15 @@ class OptimizeRequest(BaseModel):
             "duraklarda otomatik olarak hedef SOC'yi yükseltir."
         ),
     )
+    max_stops: Optional[int] = Field(
+        None,
+        ge=1,
+        le=20,
+        description=(
+            "Multi-stop zincirinde maksimum durak sayisi. None ise rota mesafesi "
+            "ve arac menziline gore dinamik hesaplanir."
+        ),
+    )
     strategies: List[StrategyName] = Field(
         default_factory=lambda: ["fast", "efficient", "balanced"]
     )

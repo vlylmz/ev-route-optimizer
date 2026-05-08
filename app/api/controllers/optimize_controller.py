@@ -241,6 +241,11 @@ def optimize_route(
             _planner.min_stop_minutes = float(req.min_stop_minutes)
         except AttributeError:
             pass  # Test fixture'larda planner yok / değiştirilemez olabilir
+        if req.max_stops is not None:
+            try:
+                _planner.max_stops = int(req.max_stops)
+            except AttributeError:
+                pass
 
     # 4) Profiller (her strateji icin yeniden simulate -> hiz profili enerjiye yansir)
     try:

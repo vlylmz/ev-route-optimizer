@@ -58,6 +58,7 @@ class ChargingPlanner:
         reserve_soc_default: float = 10.0,
         energy_buffer_factor: float = 1.05,
         min_stop_minutes: float = 10.0,
+        max_stops: int = 8,
         curve_service: Any = None,
     ) -> None:
         from app.services.charging_curve_service import ChargingCurveService
@@ -65,6 +66,7 @@ class ChargingPlanner:
         self.reserve_soc_default = reserve_soc_default
         self.energy_buffer_factor = energy_buffer_factor
         self.min_stop_minutes = min_stop_minutes
+        self.max_stops = max_stops
         self.curve_service = curve_service or ChargingCurveService()
 
     def build_plan(
@@ -420,7 +422,15 @@ class ChargingPlanner:
             soc_buffer = 2.0
             max_target_soc = 80.0
             arrival_bonus = 10.0  # ekstra guvenlik marji — varisi %10 yukari ittir
-        max_stops = 5
+
+        # Dinamik max_stops: rota mesafesi / kullanilabilir menzil + safety marji.
+        # Uzun rotada (orn. 1500km, 50kWh batarya) 5 durak yetmiyordu.
+        if usable_battery_kwh > 0 and avg_consumption_kwh_per_km > 0:
+            est_range_km = (usable_battery_kwh * 0.7) / avg_consumption_kwh_per_km
+            min_stops_needed = max(1, int(route_distance_km / est_range_km))
+            max_stops = max(self.max_stops, min_stops_needed + 3)
+        else:
+            max_stops = self.max_stops
 
         # Varişta tutulacak minimum SOC: reserve ile target'in büyüğü
         # + dengeli icin ek guvenlik bonusu (boylece duraklar arasi marjin yukari cikar)

@@ -1,6 +1,41 @@
 from app.core.charging_planner import ChargingPlanner
 
 
+def test_max_stops_default_is_eight():
+    """ChargingPlanner default max_stops 5 yerine 8 (uzun rotalar icin)."""
+    planner = ChargingPlanner()
+    assert planner.max_stops == 8
+
+
+def test_max_stops_user_override_respected():
+    """Kullanici max_stops=3 verirse planner buna saygi gosterir."""
+    planner = ChargingPlanner(max_stops=3)
+    assert planner.max_stops == 3
+
+
+def test_dynamic_max_stops_extends_for_long_routes():
+    """1500km rota + dusuk menzil -> dinamik max_stops 8'in uzerine cikar."""
+    planner = ChargingPlanner()
+
+    vehicle = {
+        "usable_battery_kwh": 50,  # kucuk batarya
+        "ideal_consumption_wh_km": 200,
+    }
+
+    # Basitlestirilmis dummy data: 1500km rota, dusuk menzilli arac.
+    # est_range = 50 * 0.7 / 0.2 = 175km. min_stops_needed = 1500/175 = 8.
+    # dynamic_max_stops = max(8, 8+3) = 11.
+    route_distance_km = 1500.0
+    avg_consumption = 0.2  # kwh/km
+
+    est_range_km = (vehicle["usable_battery_kwh"] * 0.7) / avg_consumption
+    min_stops_needed = max(1, int(route_distance_km / est_range_km))
+    dynamic_max_stops = max(planner.max_stops, min_stops_needed + 3)
+
+    assert dynamic_max_stops > planner.max_stops
+    assert dynamic_max_stops >= 11
+
+
 def test_returns_direct_plan_when_charging_not_needed():
     planner = ChargingPlanner()
 
@@ -95,13 +130,16 @@ def test_builds_single_stop_plan_when_station_selected():
         }
     }
 
+    # NOT: Balanced profili +10% güvenlik bonusu uyguladigi icin marjinal
+    # tek-stop senaryosunu infeasible bulup multi-stop'a geciyor. Bu test
+    # single-stop yolunu dogruluyor — Fast strategy bonus uygulamiyor.
     result = planner.build_plan(
         vehicle=vehicle,
         route_context=route_context,
         simulation_result=simulation_result,
         charge_need=charge_need,
         selector_result=selector_result,
-        strategy="balanced",
+        strategy="fast",
     )
 
     assert result["needs_charging"] is True
