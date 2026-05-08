@@ -48,6 +48,9 @@ class Vehicle:
     default_hvac_load_kw: float
     dc_connectors: List[str] = field(default_factory=lambda: ["CCS2"])
     ac_connectors: List[str] = field(default_factory=lambda: ["Type 2"])
+    # Slope (mekanik) enerjiyi batarya tarafina cevirme verimi.
+    # ~0.83-0.88 modern EV; eski/uzun zincirler 0.80.
+    powertrain_efficiency: float = 0.85
 
     @property
     def full_name(self) -> str:
@@ -83,6 +86,7 @@ class Vehicle:
             default_hvac_load_kw=float(data["default_hvac_load_kw"]),
             dc_connectors=list(data.get("dc_connectors", ["CCS2"])),
             ac_connectors=list(data.get("ac_connectors", ["Type 2"])),
+            powertrain_efficiency=float(data.get("powertrain_efficiency", 0.85)),
         )
 
 
@@ -268,10 +272,15 @@ def estimate_segment_energy(
     temp_penalty_kwh = get_temp_penalty_kwh(vehicle, base_consumption_kwh, temp_c)
     drivetrain_factor = get_drivetrain_factor(vehicle)
 
+    # Slope = mekanik enerji; tekerlege ulasmasi icin motor+invertor verim
+    # zincirinden gecer. Base zaten "bataryadan kullanilan" wh/km'den
+    # turediginden ona efficiency uygulanmaz.
+    slope_kwh_battery_side = slope_kwh / max(vehicle.powertrain_efficiency, 0.5)
+
     gross_consumption_kwh = (
         base_consumption_kwh
         + speed_delta_kwh
-        + slope_kwh
+        + slope_kwh_battery_side
         + hvac_kwh
         + temp_penalty_kwh
     )

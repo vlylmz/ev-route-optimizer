@@ -162,6 +162,27 @@ def test_below_reserve_flag_works(vehicle):
     assert result.below_reserve is True
 
 
+def test_powertrain_efficiency_field_loaded_from_json(vehicle):
+    """Tesla Model Y RWD JSON'da 0.88 olarak override edildi."""
+    assert vehicle.powertrain_efficiency == 0.88
+
+
+def test_uphill_consumption_higher_with_efficiency_correction(vehicle):
+    """Powertrain verim slope_kwh'a uygulaniyor; dusuk verimli arac yokusta
+    daha cok yer."""
+    import dataclasses
+
+    high_eff = dataclasses.replace(vehicle, powertrain_efficiency=0.95)
+    low_eff = dataclasses.replace(vehicle, powertrain_efficiency=0.80)
+
+    common = dict(distance_km=20, speed_kmh=90, temp_c=15, grade_pct=5, start_soc_pct=80)
+
+    high_result = estimate_segment_energy(vehicle=high_eff, **common)
+    low_result = estimate_segment_energy(vehicle=low_eff, **common)
+
+    assert low_result.energy_used_kwh > high_result.energy_used_kwh
+
+
 def test_high_temperature_increases_consumption(vehicle):
     """28C ustu sicaklikta klima yuku tuketimi artirir."""
     mild = estimate_segment_energy(

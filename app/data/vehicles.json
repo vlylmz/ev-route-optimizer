@@ -34,7 +34,8 @@
       "wltp_range_km": 455,
       "temp_penalty_factor": 0.007,
       "charge_curve_hint": "flat_lfp",
-      "default_hvac_load_kw": 1.5
+      "default_hvac_load_kw": 1.5,
+      "powertrain_efficiency": 0.88
     },
     {
       "id": "tesla_model_y_lr_awd",
@@ -57,7 +58,8 @@
       "wltp_range_km": 533,
       "temp_penalty_factor": 0.008,
       "charge_curve_hint": "tapered_nmc",
-      "default_hvac_load_kw": 1.5
+      "default_hvac_load_kw": 1.5,
+      "powertrain_efficiency": 0.88
     },
     {
       "id": "tesla_model_3_rwd",
@@ -80,7 +82,8 @@
       "wltp_range_km": 513,
       "temp_penalty_factor": 0.007,
       "charge_curve_hint": "flat_lfp",
-      "default_hvac_load_kw": 1.2
+      "default_hvac_load_kw": 1.2,
+      "powertrain_efficiency": 0.88
     },
     {
       "id": "tesla_model_3_lr_awd",
@@ -103,7 +106,8 @@
       "wltp_range_km": 629,
       "temp_penalty_factor": 0.008,
       "charge_curve_hint": "tapered_nmc",
-      "default_hvac_load_kw": 1.2
+      "default_hvac_load_kw": 1.2,
+      "powertrain_efficiency": 0.88
     },
     {
       "id": "byd_seal_lr",
@@ -218,7 +222,8 @@
       "wltp_range_km": 614,
       "temp_penalty_factor": 0.008,
       "charge_curve_hint": "tapered_nmc",
-      "default_hvac_load_kw": 1.2
+      "default_hvac_load_kw": 1.2,
+      "powertrain_efficiency": 0.87
     },
     {
       "id": "hyundai_ioniq5_lr_rwd",
@@ -241,7 +246,8 @@
       "wltp_range_km": 507,
       "temp_penalty_factor": 0.008,
       "charge_curve_hint": "tapered_nmc",
-      "default_hvac_load_kw": 1.5
+      "default_hvac_load_kw": 1.5,
+      "powertrain_efficiency": 0.87
     },
     {
       "id": "kia_ev6_lr_rwd",
@@ -264,7 +270,8 @@
       "wltp_range_km": 528,
       "temp_penalty_factor": 0.008,
       "charge_curve_hint": "tapered_nmc",
-      "default_hvac_load_kw": 1.3
+      "default_hvac_load_kw": 1.3,
+      "powertrain_efficiency": 0.87
     },
     {
       "id": "kia_ev9_lr_awd",
@@ -287,7 +294,8 @@
       "wltp_range_km": 505,
       "temp_penalty_factor": 0.009,
       "charge_curve_hint": "tapered_nmc",
-      "default_hvac_load_kw": 1.8
+      "default_hvac_load_kw": 1.8,
+      "powertrain_efficiency": 0.87
     },
     {
       "id": "volkswagen_id4_pro",
@@ -381,7 +389,8 @@
       "charge_curve_hint": "tapered_nmc",
       "default_hvac_load_kw": 1.1,
       "dc_connectors": ["CHAdeMO"],
-      "ac_connectors": ["Type 2"]
+      "ac_connectors": ["Type 2"],
+      "powertrain_efficiency": 0.80
     },
     {
       "id": "polestar_2_lr_rwd",
