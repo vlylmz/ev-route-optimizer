@@ -3,6 +3,8 @@ from __future__ import annotations
 from pprint import pprint
 from typing import Any, Dict, Iterable, List, Optional
 
+from concurrent.futures import ThreadPoolExecutor
+
 from app.core.charging_planner import ChargingPlanner
 from app.core.charging_stop_selector import ChargingStopSelector
 from app.core.utils import pick as _pick, safe_float as _safe_float
@@ -59,9 +61,10 @@ class RouteProfiles:
         """
         strategy_list = list(strategies or ["fast", "efficient", "balanced"])
 
-        profiles: Dict[str, Dict[str, Any]] = {}
-
-        for strategy in strategy_list:
+        # Stratejileri paralel olarak isle. Selector + planner + curve_service
+        # state'siz hesap; ML predict singleton ise thread-safe (joblib model
+        # read-only). max_workers strateji sayisina baglandi.
+        def _process(strategy: str) -> tuple:
             sim_for_strategy = simulation_result
             charge_need_for_strategy = charge_need
 
@@ -103,12 +106,23 @@ class RouteProfiles:
                 charge_need=charge_need_for_strategy,
             )
 
-            profiles[strategy] = {
+            return strategy, {
                 "key": strategy,
                 "label": self.STRATEGY_LABELS.get(strategy, strategy.title()),
                 **plan_result,
                 "ml_summary": profile_ml_summary,
             }
+
+        profiles: Dict[str, Dict[str, Any]] = {}
+        if len(strategy_list) <= 1:
+            for strategy in strategy_list:
+                key, profile = _process(strategy)
+                profiles[key] = profile
+        else:
+            with ThreadPoolExecutor(max_workers=len(strategy_list)) as pool:
+                results = list(pool.map(_process, strategy_list))
+            for key, profile in results:
+                profiles[key] = profile
 
         profile_cards = self._build_profile_cards(profiles)
         feasible_profiles = self._feasible_profiles(profiles)
