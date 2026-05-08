@@ -428,41 +428,13 @@ class ChargingStopSelector:
         route_points: List[RoutePoint],
         spatial_index: Optional[RouteSpatialIndex] = None,
     ) -> Tuple[Optional[float], float]:
-        # Eğer charging_service zaten hesapladıysa direkt onu kullan.
-        precomputed_along = _pick(
-            station,
-            "distance_along_route_km",
-            "distance_from_start_km",
-            default=None,
+        from app.core.station_enricher import resolve_station_route_metrics
+
+        return resolve_station_route_metrics(
+            station=station,
+            route_points=route_points,
+            spatial_index=spatial_index,
         )
-        precomputed_offset = _pick(
-            station,
-            "distance_from_route_km",
-            "offset_km",
-            "detour_km",
-            default=None,
-        )
-
-        if precomputed_along is not None:
-            return _safe_float(precomputed_along), _safe_float(precomputed_offset, 0.0)
-
-        if not route_points:
-            return None, 0.0
-
-        station_lat = _safe_float(_pick(station, "lat", "latitude"), 0.0)
-        station_lon = _safe_float(_pick(station, "lon", "lng", "longitude"), 0.0)
-
-        if spatial_index is not None:
-            nearest_point, offset_km = spatial_index.nearest(station_lat, station_lon)
-            return nearest_point.cumulative_distance_km, offset_km
-
-        # Fallback: lineer tarama (route_points kucukse veya scipy yoksa).
-        nearest_point = min(
-            route_points,
-            key=lambda p: _haversine_km(station_lat, station_lon, p.lat, p.lon),
-        )
-        offset_km = _haversine_km(station_lat, station_lon, nearest_point.lat, nearest_point.lon)
-        return nearest_point.cumulative_distance_km, offset_km
 
     def _interpolate_soc_at_distance(
         self,

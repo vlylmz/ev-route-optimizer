@@ -6,7 +6,11 @@ from app.core.charging_stop_selector import (
     _extract_station_connectors,
     _vehicle_connector_set,
 )
-from app.core.geo_utils import haversine_km as _haversine_km
+from app.core.geo_utils import RouteSpatialIndex, haversine_km as _haversine_km
+from app.core.station_enricher import (
+    passes_hard_filters,
+    resolve_station_route_metrics,
+)
 from app.core.utils import pick as _pick, safe_float as _safe_float
 
 
@@ -696,53 +700,30 @@ class ChargingPlanner:
             _vehicle_connector_set(vehicle) if vehicle is not None else set()
         )
 
+        spatial_index = RouteSpatialIndex(route_points) if route_points else None
+
         enriched: List[Dict[str, Any]] = []
         for station in raw_stations:
-            if vehicle_connectors:
-                station_connectors = _extract_station_connectors(station)
-                if station_connectors and not vehicle_connectors.intersection(station_connectors):
-                    continue
-            distance_along = _pick(
-                station,
-                "distance_along_route_km",
-                "distance_from_start_km",
-                default=None,
-            )
-            offset = _pick(
-                station,
-                "distance_from_route_km",
-                "offset_km",
-                "detour_km",
-                default=None,
-            )
+            # HARD filter: operational + connector match (station_enricher).
+            if not passes_hard_filters(
+                station=station,
+                vehicle_connectors=vehicle_connectors,
+            ):
+                continue
 
-            station_lat, station_lon = self._station_coords(station)
-
+            distance_along, offset = resolve_station_route_metrics(
+                station=station,
+                route_points=route_points,
+                spatial_index=spatial_index,
+            )
             if distance_along is None:
-                if not route_points or station_lat is None or station_lon is None:
-                    continue
-                nearest = min(
-                    route_points,
-                    key=lambda p: _haversine_km(
-                        station_lat, station_lon, p[0], p[1]
-                    ),
-                )
-                distance_along = nearest[2]
-                offset = _haversine_km(
-                    station_lat, station_lon, nearest[0], nearest[1]
-                )
+                continue
 
             distance_along = _safe_float(distance_along, 0.0)
             offset = _safe_float(offset, 0.0)
 
             power_kw = self._station_power_kw(station)
             if power_kw <= 0:
-                continue
-
-            operational = bool(
-                _pick(station, "is_operational", "available", default=True)
-            )
-            if not operational:
                 continue
 
             name = _pick(station, "name", "title", default=None)
@@ -764,40 +745,16 @@ class ChargingPlanner:
         enriched.sort(key=lambda s: s["distance_along_route_km"])
         return enriched
 
-    def _build_route_points(
-        self,
-        route: Dict[str, Any],
-    ) -> List[tuple]:
-        """Route geometry'den (lat, lon, cumulative_km) listesi cikarir."""
+    def _build_route_points(self, route: Dict[str, Any]):
+        """Route geometry'den RoutePoint listesi cikarir (geo_utils helper)."""
+        from app.core.geo_utils import build_route_points
+
         raw_points = (
             _pick(route, "geometry", "points", "coordinates", default=[])
             or _pick(route, "polyline_points", default=[])
             or []
         )
-        if not raw_points:
-            return []
-
-        parsed: List[tuple] = []
-        for item in raw_points:
-            if isinstance(item, dict):
-                lat = _safe_float(_pick(item, "lat", "latitude"), 0.0)
-                lon = _safe_float(_pick(item, "lon", "lng", "longitude"), 0.0)
-                parsed.append((lat, lon))
-            elif isinstance(item, (list, tuple)) and len(item) >= 2:
-                parsed.append((_safe_float(item[0]), _safe_float(item[1])))
-
-        if not parsed:
-            return []
-
-        result: List[tuple] = []
-        cumulative = 0.0
-        prev: Optional[tuple] = None
-        for lat, lon in parsed:
-            if prev is not None:
-                cumulative += _haversine_km(prev[0], prev[1], lat, lon)
-            result.append((lat, lon, cumulative))
-            prev = (lat, lon)
-        return result
+        return build_route_points(raw_points)
 
     def _station_coords(
         self,
