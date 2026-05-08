@@ -114,3 +114,60 @@ def test_fast_strategy_prefers_higher_power_station():
 
     assert result["selected_station"] is not None
     assert result["selected_station"]["name"] == "Yakın Hızlı İstasyon"
+
+
+def test_operational_false_station_is_filtered_out():
+    """Kapali istasyon ne kadar uygun gozukse de aday listede olmamali."""
+    selector = ChargingStopSelector()
+    vehicle, route_context, simulation_result, charge_need = build_common_data()
+
+    # Diger butun istasyonlari kaldir; sadece operational=False kalsin.
+    route_context["stations"] = [
+        {
+            "name": "Kapali Istasyon",
+            "distance_along_route_km": 150,
+            "distance_from_route_km": 0.5,
+            "power_kw": 180,
+            "is_operational": False,
+        },
+    ]
+
+    result = selector.select_stop(
+        vehicle=vehicle,
+        route_context=route_context,
+        simulation_result=simulation_result,
+        charge_need=charge_need,
+        strategy="balanced",
+    )
+
+    assert result["selected_station"] is None
+    assert result["candidates"] == []
+
+
+def test_operational_false_excluded_when_other_candidates_exist():
+    """Birden fazla aday varsa operational=False olan candidates listesinde olmamali."""
+    selector = ChargingStopSelector()
+    vehicle, route_context, simulation_result, charge_need = build_common_data()
+
+    route_context["stations"].append(
+        {
+            "name": "Kapali Hizli",
+            "distance_along_route_km": 160,
+            "distance_from_route_km": 0.2,
+            "power_kw": 350,
+            "is_operational": False,
+        }
+    )
+
+    result = selector.select_stop(
+        vehicle=vehicle,
+        route_context=route_context,
+        simulation_result=simulation_result,
+        charge_need=charge_need,
+        strategy="balanced",
+    )
+
+    candidate_names = {c["name"] for c in result["candidates"]}
+    assert "Kapali Hizli" not in candidate_names
+    assert result["selected_station"] is not None
+    assert result["selected_station"]["name"] != "Kapali Hizli"

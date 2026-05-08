@@ -319,13 +319,15 @@ class ChargingStopSelector:
         if self.default_detour_speed_kmh > 0:
             detour_minutes = (detour_distance_km / self.default_detour_speed_kmh) * 60.0
 
+        # HARD filter: kapali istasyonu hicbir kosulda secme.
+        if not bool(_pick(station, "is_operational", "available", default=True)):
+            return None
+
         margin_soc = soc_at_station - reserve_soc
-        operational = bool(_pick(station, "is_operational", "available", default=True))
 
         risk_score = self._risk_score(
             margin_soc=margin_soc,
             station_power_kw=station_power_kw,
-            operational=operational,
         )
 
         total_stop_minutes = charge_minutes + detour_minutes
@@ -508,12 +510,8 @@ class ChargingStopSelector:
         *,
         margin_soc: float,
         station_power_kw: float,
-        operational: bool,
     ) -> float:
         score = 0.0
-
-        if not operational:
-            score += 100.0
 
         # Rezerv SOC'a çok yakın varmak riskli.
         if margin_soc < 6.0:
