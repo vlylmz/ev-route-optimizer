@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from math import atan2, cos, radians, sin, sqrt
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 
@@ -113,6 +115,7 @@ class ChargingStopSelector:
         max_target_soc_percent: float = 85.0,
         post_80_taper_factor: float = 0.55,
         curve_service: Any = None,
+        strategy_config_path: Optional[Path] = None,
     ) -> None:
         from app.services.charging_curve_service import ChargingCurveService
 
@@ -123,6 +126,8 @@ class ChargingStopSelector:
         self.max_target_soc_percent = max_target_soc_percent
         self.post_80_taper_factor = post_80_taper_factor
         self.curve_service = curve_service or ChargingCurveService()
+        self.strategy_config_path = strategy_config_path
+        self._strategy_config_cache: Optional[Dict[str, Any]] = None
 
     def select_stop(
         self,
@@ -247,6 +252,8 @@ class ChargingStopSelector:
                 "message": "Uygun ve erişilebilir şarj istasyonu bulunamadı.",
             }
 
+        # Normalize edilmis multi-objective skor; dusuk = iyi.
+        self._normalize_and_score(candidates=enriched_candidates, strategy=strategy)
         ranked = sorted(enriched_candidates, key=lambda x: x["score"])
         selected = ranked[0]
 
@@ -396,14 +403,22 @@ class ChargingStopSelector:
 
         total_stop_minutes = charge_minutes + detour_minutes
 
-        score = self._score_candidate(
-            strategy=strategy,
-            detour_distance_km=detour_distance_km,
-            charge_minutes=charge_minutes,
-            risk_score=risk_score,
-            total_stop_minutes=total_stop_minutes,
-            station_power_kw=station_power_kw,
+        # HARD filter: rezerv ustunde anlamli marj birakmayan istasyon adayligi
+        # alamaz. Min marj strategy_weights.json'dan; default 3.0 puan.
+        config = self._load_strategy_config()
+        min_margin = float(config.get("min_safe_soc_margin_pct", self._DEFAULT_MIN_SAFE_SOC_MARGIN))
+        if margin_soc < min_margin:
+            return None
+
+        # Raw metrics: normalize asamasinda min-max'e tabi tutulur.
+        charge_kwh = max(0.0, target_soc - soc_at_station) * usable_battery_kwh / 100.0
+        # Detour enerjisi + sarj kaybi (~%5 charging loss).
+        extra_energy_kwh = detour_distance_km * avg_consumption_kwh_per_km + charge_kwh * 0.05
+        price_per_kwh = _safe_float(
+            _pick(station, "price_per_kwh_try", "price_per_kwh"),
+            float(config.get("default_price_per_kwh_try", self._DEFAULT_PRICE_PER_KWH_TRY)),
         )
+        extra_cost_try = price_per_kwh * charge_kwh
 
         max_reachable_without_extra_stop_kwh = (
             usable_battery_kwh * max(self.max_target_soc_percent - reserve_soc, 0.0) / 100.0
@@ -421,9 +436,15 @@ class ChargingStopSelector:
             "detour_minutes": round(detour_minutes, 1),
             "total_stop_minutes": round(total_stop_minutes, 1),
             "risk_score": round(risk_score, 2),
-            "score": round(score, 2),
             "remaining_distance_km": round(remaining_distance_km, 2),
             "requires_additional_stop": required_remaining_energy_kwh > max_reachable_without_extra_stop_kwh,
+            # Normalize asamasinda kullanilacak raw metrics:
+            "extra_time_min": round(total_stop_minutes, 2),
+            "extra_energy_kwh": round(extra_energy_kwh, 3),
+            "extra_cost_try": round(extra_cost_try, 2),
+            "soc_margin_at_station": round(margin_soc, 2),
+            "charge_kwh": round(charge_kwh, 2),
+            "price_per_kwh_try": round(price_per_kwh, 2),
         }
 
     def _resolve_station_route_metrics(
@@ -587,42 +608,87 @@ class ChargingStopSelector:
 
         return score
 
-    def _score_candidate(
+    _DEFAULT_STRATEGY_WEIGHTS = {
+        "fast":      {"time": 0.65, "energy": 0.10, "cost": 0.10, "safety": 0.15},
+        "efficient": {"time": 0.15, "energy": 0.50, "cost": 0.20, "safety": 0.15},
+        "balanced":  {"time": 0.35, "energy": 0.30, "cost": 0.15, "safety": 0.20},
+    }
+    _DEFAULT_PRICE_PER_KWH_TRY = 7.0
+    _DEFAULT_MIN_SAFE_SOC_MARGIN = 3.0
+
+    def _load_strategy_config(self) -> Dict[str, Any]:
+        """JSON config'i bir kez yukle, runtime cache'le. Hata olursa default."""
+        if self._strategy_config_cache is not None:
+            return self._strategy_config_cache
+
+        path = self.strategy_config_path
+        if path is None:
+            path = Path(__file__).resolve().parent.parent / "data" / "strategy_weights.json"
+
+        config = {
+            "weights": dict(self._DEFAULT_STRATEGY_WEIGHTS),
+            "default_price_per_kwh_try": self._DEFAULT_PRICE_PER_KWH_TRY,
+            "min_safe_soc_margin_pct": self._DEFAULT_MIN_SAFE_SOC_MARGIN,
+        }
+
+        try:
+            with Path(path).open("r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data.get("weights"), dict):
+                config["weights"] = data["weights"]
+            if "default_price_per_kwh_try" in data:
+                config["default_price_per_kwh_try"] = float(data["default_price_per_kwh_try"])
+            if "min_safe_soc_margin_pct" in data:
+                config["min_safe_soc_margin_pct"] = float(data["min_safe_soc_margin_pct"])
+        except (OSError, json.JSONDecodeError, ValueError):
+            pass
+
+        self._strategy_config_cache = config
+        return config
+
+    def _normalize_and_score(
         self,
         *,
+        candidates: List[Dict[str, Any]],
         strategy: str,
-        detour_distance_km: float,
-        charge_minutes: float,
-        risk_score: float,
-        total_stop_minutes: float,
-        station_power_kw: float,
-    ) -> float:
-        strategy = strategy.lower()
-        power_bonus = min(max(station_power_kw, 0.0), 200.0) * 0.03
+    ) -> None:
+        """Aday listesindeki raw metrics'i min-max normalize eder ve score ekler."""
+        if not candidates:
+            return
 
-        # fast: süreyi ve güçlü istasyonu daha çok önemser
-        if strategy == "fast":
-            return (
-                (total_stop_minutes * 0.82)
-                + (risk_score * 2.4)
-                + (detour_distance_km * 0.35)
-                - power_bonus
+        config = self._load_strategy_config()
+        weights = config["weights"].get(strategy.lower()) or self._DEFAULT_STRATEGY_WEIGHTS["balanced"]
+
+        def col(name: str) -> List[float]:
+            return [float(c.get(name, 0.0)) for c in candidates]
+
+        def normalize(values: List[float], invert: bool = False) -> List[float]:
+            lo, hi = min(values), max(values)
+            if hi - lo < 1e-9:
+                return [0.0] * len(values)
+            normalized = [(v - lo) / (hi - lo) for v in values]
+            return [1.0 - x for x in normalized] if invert else normalized
+
+        time_norm = normalize(col("extra_time_min"))
+        energy_norm = normalize(col("extra_energy_kwh"))
+        cost_norm = normalize(col("extra_cost_try"))
+        # SOC margin: yuksek margin iyi -> dusuk safety penalty.
+        safety_norm = normalize(col("soc_margin_at_station"), invert=True)
+
+        for i, cand in enumerate(candidates):
+            score = (
+                weights.get("time", 0.0) * time_norm[i]
+                + weights.get("energy", 0.0) * energy_norm[i]
+                + weights.get("cost", 0.0) * cost_norm[i]
+                + weights.get("safety", 0.0) * safety_norm[i]
             )
-
-        # efficient: sapmayı daha çok önemser
-        if strategy == "efficient":
-            return (
-                (detour_distance_km * 2.8)
-                + (charge_minutes * 0.45)
-                + (risk_score * 2.2)
-            )
-
-        # balanced
-        return (
-            (detour_distance_km * 1.8)
-            + (charge_minutes * 0.55)
-            + (risk_score * 2.5)
-        )
+            cand["score"] = round(score, 4)
+            cand["score_breakdown"] = {
+                "time": round(weights.get("time", 0.0) * time_norm[i], 4),
+                "energy": round(weights.get("energy", 0.0) * energy_norm[i], 4),
+                "cost": round(weights.get("cost", 0.0) * cost_norm[i], 4),
+                "safety": round(weights.get("safety", 0.0) * safety_norm[i], 4),
+            }
 
     def _build_reason(self, station: Dict[str, Any], strategy: str) -> str:
         name = _pick(station, "name", "title", default="İstasyon")

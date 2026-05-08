@@ -1,0 +1,19 @@
+{
+  "metadata": {
+    "version": "1.0",
+    "description": "Sarj istasyonu skorlama agirliklari. Min-max normalize sonrasi 0-1 araligindaki metric'lerin agirlikli toplaminda kullanilir; dusuk skor = iyi aday.",
+    "metrics": {
+      "time": "extra_time_min (detour + charge minutes)",
+      "energy": "extra_energy_kwh (detour distance * cons + charge loss)",
+      "cost": "extra_cost_try (price_per_kwh * charge_kwh)",
+      "safety": "1 - normalized(soc_margin_at_station)"
+    }
+  },
+  "default_price_per_kwh_try": 7.0,
+  "min_safe_soc_margin_pct": 3.0,
+  "weights": {
+    "fast":      {"time": 0.65, "energy": 0.10, "cost": 0.10, "safety": 0.15},
+    "efficient": {"time": 0.15, "energy": 0.50, "cost": 0.20, "safety": 0.15},
+    "balanced":  {"time": 0.35, "energy": 0.30, "cost": 0.15, "safety": 0.20}
+  }
+}
