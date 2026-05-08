@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import asdict, is_dataclass
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, List, Optional
 
 from app.core.charging_stop_selector import ChargingStopSelector
+from app.core.protocols import (
+    IChargeNeedAnalyzer,
+    IRouteContextService,
+    IRouteEnergySimulator,
+)
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
@@ -44,9 +49,9 @@ class RoutePlanner:
     def __init__(
         self,
         *,
-        route_context_service: Any,
-        route_energy_simulator: Any,
-        charge_need_analyzer: Any,
+        route_context_service: IRouteContextService,
+        route_energy_simulator: IRouteEnergySimulator,
+        charge_need_analyzer: IChargeNeedAnalyzer,
         charging_stop_selector: Optional[Any] = None,
     ) -> None:
         self.route_context_service = route_context_service
@@ -152,20 +157,7 @@ class RoutePlanner:
         )
 
     def _build_route_context(self, *, start: Any, end: Any) -> Dict[str, Any]:
-        return self._call_first_supported(
-            service=self.route_context_service,
-            method_names=[
-                "build_route_context",
-                "get_route_context",
-                "create_route_context",
-            ],
-            kwargs_options=[
-                {"start": start, "end": end},
-                {"origin": start, "destination": end},
-                {"start_point": start, "end_point": end},
-            ],
-            service_name="route_context_service",
-        )
+        return self.route_context_service.build_route_context(start=start, end=end)
 
     def _simulate_route(
         self,
@@ -174,36 +166,10 @@ class RoutePlanner:
         route_context: Dict[str, Any],
         initial_soc: float,
     ) -> Any:
-        return self._call_first_supported(
-            service=self.route_energy_simulator,
-            method_names=[
-                "simulate",
-                "simulate_route",
-                "run",
-            ],
-            kwargs_options=[
-                {
-                    "vehicle": vehicle,
-                    "route_context": route_context,
-                    "initial_soc": initial_soc,
-                },
-                {
-                    "vehicle": vehicle,
-                    "route_context": route_context,
-                    "start_soc_pct": initial_soc,
-                },
-                {
-                    "vehicle": vehicle,
-                    "route": route_context,
-                    "initial_soc": initial_soc,
-                },
-                {
-                    "vehicle": vehicle,
-                    "context": route_context,
-                    "initial_soc": initial_soc,
-                },
-            ],
-            service_name="route_energy_simulator",
+        return self.route_energy_simulator.simulate(
+            vehicle=vehicle,
+            route_context=route_context,
+            start_soc_pct=initial_soc,
         )
 
     def _analyze_charge_need(
@@ -214,44 +180,18 @@ class RoutePlanner:
         simulation_result_raw: Any,
         simulation_result: Dict[str, Any],
     ) -> Any:
+        # route_context kanonik analyze imzasinda kullanilmiyor; signature
+        # uyumu icin imzada tutuluyor.
+        del route_context
+        del simulation_result
+
         usable_battery_kwh = self._vehicle_usable_battery_kwh(vehicle)
         reserve_soc_pct = self._vehicle_reserve_soc_pct(vehicle)
 
-        return self._call_first_supported(
-            service=self.charge_need_analyzer,
-            method_names=[
-                "analyze",
-                "analyze_need",
-                "evaluate",
-            ],
-            kwargs_options=[
-                {
-                    "vehicle": vehicle,
-                    "route_context": route_context,
-                    "simulation_result": simulation_result_raw,
-                },
-                {
-                    "vehicle": vehicle,
-                    "route": route_context,
-                    "simulation": simulation_result_raw,
-                },
-                {
-                    "vehicle": vehicle,
-                    "context": route_context,
-                    "result": simulation_result_raw,
-                },
-                {
-                    "simulation": simulation_result_raw,
-                    "usable_battery_kwh": usable_battery_kwh,
-                    "reserve_soc_pct": reserve_soc_pct,
-                },
-                {
-                    "simulation": simulation_result,
-                    "usable_battery_kwh": usable_battery_kwh,
-                    "reserve_soc_pct": reserve_soc_pct,
-                },
-            ],
-            service_name="charge_need_analyzer",
+        return self.charge_need_analyzer.analyze(
+            simulation=simulation_result_raw,
+            usable_battery_kwh=usable_battery_kwh,
+            reserve_soc_pct=reserve_soc_pct,
         )
 
     def _select_charging_stop(
@@ -592,35 +532,3 @@ class RoutePlanner:
 
         return payload
 
-    def _call_first_supported(
-        self,
-        *,
-        service: Any,
-        method_names: Iterable[str],
-        kwargs_options: List[Dict[str, Any]],
-        service_name: str,
-    ) -> Any:
-        for method_name in method_names:
-            method = getattr(service, method_name, None)
-            if not callable(method):
-                continue
-
-            for kwargs in kwargs_options:
-                try:
-                    result = method(**kwargs)
-                    if result is None:
-                        continue
-                    return result
-                except TypeError:
-                    continue
-
-        available = [
-            name
-            for name in dir(service)
-            if not name.startswith("_") and callable(getattr(service, name))
-        ]
-        raise AttributeError(
-            f"{service_name} için uygun method bulunamadı. "
-            f"Denenen methodlar: {list(method_names)} | "
-            f"Mevcut callables: {available}"
-        )

@@ -2,7 +2,7 @@ from app.core.route_planner import RoutePlanner
 
 
 class FakeRouteContextService:
-    def build_route_context(self, start, end):
+    def build_route_context(self, *, start, end, **opts):
         return {
             "start": start,
             "end": end,
@@ -23,9 +23,9 @@ class FakeRouteContextService:
 
 
 class FakeRouteEnergySimulator:
-    def simulate(self, *, vehicle, route_context, initial_soc):
+    def simulate(self, *, vehicle, route_context, start_soc_pct, use_ml=None):
         return {
-            "initial_soc": initial_soc,
+            "initial_soc": start_soc_pct,
             "total_energy_kwh": 52,
             "segments": [
                 {"cumulative_distance_km": 100, "soc_after": 58},
@@ -36,20 +36,20 @@ class FakeRouteEnergySimulator:
 
 
 class FakeChargeNeedAnalyzerNeedCharge:
-    def analyze(self, *, vehicle, route_context, simulation_result):
+    def analyze(self, *, simulation, usable_battery_kwh, reserve_soc_pct):
         return {
             "needs_charging": True,
             "critical_distance_km": 220,
-            "reserve_soc_percent": 10,
+            "reserve_soc_percent": reserve_soc_pct,
         }
 
 
 class FakeChargeNeedAnalyzerNoCharge:
-    def analyze(self, *, vehicle, route_context, simulation_result):
+    def analyze(self, *, simulation, usable_battery_kwh, reserve_soc_pct):
         return {
             "needs_charging": False,
             "critical_distance_km": None,
-            "reserve_soc_percent": 10,
+            "reserve_soc_percent": reserve_soc_pct,
         }
 
 
@@ -133,9 +133,9 @@ def test_route_planner_skips_selector_when_charge_not_needed():
     assert selector.called is False
 def test_route_planner_propagates_ml_summary():
     class FakeRouteEnergySimulatorWithML:
-        def simulate(self, *, vehicle, route_context, initial_soc):
+        def simulate(self, *, vehicle, route_context, start_soc_pct, use_ml=None):
             return {
-                "initial_soc": initial_soc,
+                "initial_soc": start_soc_pct,
                 "final_soc": 18,
                 "total_energy_kwh": 48,
                 "used_ml": True,
@@ -150,11 +150,11 @@ def test_route_planner_propagates_ml_summary():
             }
 
     class FakeChargeNeedAnalyzerNoCharge:
-        def analyze(self, *, vehicle, route_context, simulation_result):
+        def analyze(self, *, simulation, usable_battery_kwh, reserve_soc_pct):
             return {
                 "needs_charging": False,
                 "critical_distance_km": None,
-                "reserve_soc_percent": 10,
+                "reserve_soc_percent": reserve_soc_pct,
             }
 
     planner = RoutePlanner(
@@ -181,3 +181,29 @@ def test_route_planner_propagates_ml_summary():
     assert result["ml_summary"]["ml_segment_count"] == 3
     assert result["ml_summary"]["heuristic_segment_count"] == 0
     assert result["ml_summary"]["model_version"] == "lgbm_v1"
+
+
+def test_route_planner_raises_clearly_when_simulator_misimplements_interface():
+    """Imzasi uymayan fake simulator -> TypeError (sessizce yutulmuyor)."""
+    import pytest
+
+    class BrokenSimulator:
+        # Eksik kw 'route_context' ve 'start_soc_pct' yerine farkli isim.
+        def simulate(self, *, vehicle, ctx, soc):
+            return {}
+
+    planner = RoutePlanner(
+        route_context_service=FakeRouteContextService(),
+        route_energy_simulator=BrokenSimulator(),
+        charge_need_analyzer=FakeChargeNeedAnalyzerNoCharge(),
+        charging_stop_selector=FakeSelector(),
+    )
+
+    with pytest.raises(TypeError):
+        planner.plan(
+            start="Ankara",
+            end="Eskisehir",
+            vehicle={"name": "Test EV", "usable_battery_kwh": 60},
+            initial_soc=80,
+            strategy="balanced",
+        )
