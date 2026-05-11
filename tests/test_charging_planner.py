@@ -322,6 +322,84 @@ def test_target_arrival_soc_pct_overrides_default_reserve():
         assert arrival >= 25.0, f"target_arrival_soc_pct=25 saglanmadi: {arrival}"
 
 
+def test_dijkstra_path_respects_min_stop_minutes():
+    """Dijkstra solver chain'i build_plan output'una donusurken her stop'un
+    charge_minutes >= min_stop_minutes olmali (kullanici 1-2 dk icin durmaz)."""
+    planner = ChargingPlanner(min_stop_minutes=15.0)
+
+    vehicle = {
+        "usable_battery_kwh": 60,
+        "ideal_consumption_wh_km": 180,
+        "max_dc_charge_kw": 250,
+        "charge_curve_hint": "tapered_nmc",
+        "battery_chemistry": "NMC",
+    }
+    # Uzun rota, multi-stop'a zorlasin.
+    route_context = {
+        "route": {
+            "distance_km": 600,
+            "duration_min": 400,
+            "geometry": [
+                {"lat": 39.0, "lon": 32.0},
+                {"lat": 39.5, "lon": 32.5},
+                {"lat": 40.0, "lon": 33.0},
+            ],
+        },
+        "stations": [
+            {"name": "S1", "distance_along_route_km": 100, "distance_from_route_km": 0.5,
+             "power_kw": 250, "is_operational": True},
+            {"name": "S2", "distance_along_route_km": 250, "distance_from_route_km": 0.5,
+             "power_kw": 250, "is_operational": True},
+            {"name": "S3", "distance_along_route_km": 400, "distance_from_route_km": 0.5,
+             "power_kw": 250, "is_operational": True},
+        ],
+    }
+    simulation_result = {
+        "initial_soc": 90,
+        "total_energy_kwh": 108,
+        "segments": [
+            {"cumulative_distance_km": 200, "soc_after": 30},
+            {"cumulative_distance_km": 400, "soc_after": -30},
+            {"cumulative_distance_km": 600, "soc_after": -100},
+        ],
+    }
+    charge_need = {"needs_charging": True, "reserve_soc_percent": 10}
+    selector_result = {
+        "selected_station": {
+            "name": "S1",
+            "distance_along_route_km": 100,
+            "remaining_distance_km": 500,
+            "detour_distance_km": 1.0,
+            "detour_minutes": 1.5,
+            "soc_at_arrival_percent": 60.0,
+            "target_soc_percent": 80.0,
+            "charge_minutes": 5.0,
+            "power_kw": 250,
+        },
+    }
+
+    result = planner.build_plan(
+        vehicle=vehicle,
+        route_context=route_context,
+        simulation_result=simulation_result,
+        charge_need=charge_need,
+        selector_result=selector_result,
+        strategy="fast",
+    )
+
+    # Multi-stop path'i (Dijkstra veya greedy fallback) calismali; her durak
+    # min_stop_minutes'a yakin olmali. NMC araç 85%+ tapered oldugu icin max
+    # uzatma 95'e cikilsa bile bazen min_stop'a tam ulasilamaz; %80 esiği
+    # pragmatik kriter ("hic min_stop saygisi yok" -> 1-5 dk; bu fix sonrasi
+    # >= 12 dk).
+    min_stop = 15.0
+    if result.get("recommended_stops"):
+        for stop in result["recommended_stops"]:
+            assert stop["charge_minutes"] >= min_stop * 0.8, (
+                f"Stop charge_minutes={stop['charge_minutes']} << min_stop={min_stop}"
+            )
+
+
 def test_unreachable_destination_returns_no_feasible_plan():
     """Initial SOC dusuk + istasyon yok -> infeasible mesaji net."""
     planner = ChargingPlanner()

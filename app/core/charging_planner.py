@@ -344,7 +344,11 @@ class ChargingPlanner:
         charge_minutes: float,
         usable_battery_kwh: float,
     ) -> tuple[float, float]:
-        """Kullanici 1-2 dk icin durmaz. Charge<min_stop ise target SOC'u yukselt."""
+        """Kullanici 1-2 dk icin durmaz. Charge<min_stop ise target SOC'u yukselt.
+
+        Multi-stop'ta solver target'i ~85'e dayadiginda 90 max yetmiyor; 95'e
+        kadar genislet (egri yumusak bolgesi). Arac soc_max_pct varsa onu kullan.
+        """
         if (
             self.min_stop_minutes <= 0
             or charge_minutes >= self.min_stop_minutes
@@ -352,13 +356,16 @@ class ChargingPlanner:
         ):
             return target_soc_percent, charge_minutes
 
+        vehicle_soc_max = _safe_float(_pick(vehicle, "soc_max_pct"), 100.0)
+        max_target = min(95.0, vehicle_soc_max)
+
         extended_target = self.curve_service.find_target_soc_for_minutes(
             vehicle=vehicle,
             station_kw=station_power_kw,
             start_soc_pct=arrival_soc_at_station,
             target_minutes=self.min_stop_minutes,
             usable_battery_kwh=usable_battery_kwh,
-            max_target=90.0,
+            max_target=max_target,
         )
         if extended_target > target_soc_percent:
             new_target = extended_target
@@ -842,6 +849,19 @@ class ChargingPlanner:
             distance_along = float(stop.get("distance_along_route_km", 0.0))
             leg_km = max(0.0, distance_along - current_distance)
             soc_at_arrival = current_soc - (leg_km * avg_consumption_kwh_per_km / usable_battery_kwh) * 100.0
+
+            station_power_kw = float(stop.get("power_kw", 50.0))
+            # Min duraklama suresi: kullanici 1-2 dk icin durmaz. Solver SOC
+            # discretization yuzunden cok kisa duraklar uretebilir; min_stop'a
+            # gore target SOC'u yukseltip yeniden hesapla.
+            target_soc, charge_min = self._apply_min_stop_extension(
+                vehicle=vehicle,
+                station_power_kw=station_power_kw,
+                arrival_soc_at_station=soc_at_arrival,
+                target_soc_percent=target_soc,
+                charge_minutes=charge_min,
+                usable_battery_kwh=usable_battery_kwh,
+            )
 
             detour_km = float(stop.get("detour_distance_km", 0.0))
             detour_min = (detour_km / 40.0) * 60.0 if detour_km > 0 else 0.0
