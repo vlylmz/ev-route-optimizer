@@ -88,12 +88,16 @@ export async function getVehicle(id: string): Promise<VehicleDetail> {
   }
 }
 
+// /route ve /optimize OSRM + elevation + hava + Overpass + OCM zincirleyebiliyor;
+// uzun rotalarda 30sn yetmeyebiliyor — bu çağrılar için ayrıca 2dk verelim.
+const SLOW_TIMEOUT_MS = 120_000
+
 export async function postRoute(body: {
   start: { lat: number; lon: number }
   end: { lat: number; lon: number }
 }): Promise<RouteResponse> {
   try {
-    const res = await api.post('/route', body)
+    const res = await api.post('/route', body, { timeout: SLOW_TIMEOUT_MS })
     return RouteResponseSchema.parse(res.data)
   } catch (err) {
     rethrow(err)
@@ -105,7 +109,7 @@ export async function postOptimize(
 ): Promise<OptimizeResponse> {
   try {
     const body = OptimizeRequestSchema.parse(input)
-    const res = await api.post('/optimize', body)
+    const res = await api.post('/optimize', body, { timeout: SLOW_TIMEOUT_MS })
     return OptimizeResponseSchema.parse(res.data)
   } catch (err) {
     rethrow(err)
