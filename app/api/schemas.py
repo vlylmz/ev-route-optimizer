@@ -234,6 +234,15 @@ class OptimizeRequest(BaseModel):
             "ve arac menziline gore dinamik hesaplanir."
         ),
     )
+    energy_buffer_factor: Optional[float] = Field(
+        None,
+        ge=1.0,
+        le=1.5,
+        description=(
+            "Sarj plani enerji guvenlik carpani (1.05 = %5 buffer). None ise "
+            "planner default'u (1.05) kullanilir. Ileri kullanicilar icin."
+        ),
+    )
     strategies: List[StrategyName] = Field(
         default_factory=lambda: ["fast", "efficient", "balanced"]
     )

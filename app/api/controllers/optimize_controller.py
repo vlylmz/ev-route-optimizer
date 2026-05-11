@@ -246,6 +246,11 @@ def optimize_route(
                 _planner.max_stops = int(req.max_stops)
             except AttributeError:
                 pass
+        if req.energy_buffer_factor is not None:
+            try:
+                _planner.energy_buffer_factor = float(req.energy_buffer_factor)
+            except AttributeError:
+                pass
 
     # 4) Profiller (her strateji icin yeniden simulate -> hiz profili enerjiye yansir)
     try:

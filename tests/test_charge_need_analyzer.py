@@ -147,6 +147,19 @@ def test_charge_required_when_below_reserve():
     assert result.minimum_soc_pct == 4.0
     assert result.estimated_additional_soc_needed_pct > 0
     assert result.estimated_additional_energy_needed_kwh > 0
+def test_no_critical_segment_returns_recommendation_without_crashing():
+    """Tum rota rezerv ustunde geciyorsa critical_segment None, crash yok."""
+    analyzer = ChargeNeedAnalyzer()
+    result = analyzer.analyze(
+        simulation=build_simulation_ok(),
+        usable_battery_kwh=57.5,
+        reserve_soc_pct=10.0,
+    )
+    assert result.charging_required is False
+    assert result.critical_segment_no is None
+    assert isinstance(result.recommendation, str) and len(result.recommendation) > 0
+
+
 def test_charge_need_analysis_propagates_ml_metadata():
     analyzer = ChargeNeedAnalyzer()
 

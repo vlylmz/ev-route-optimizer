@@ -263,3 +263,93 @@ def test_build_plan_propagates_ml_summary():
     assert result["ml_summary"]["heuristic_segment_count"] == 0
     assert result["ml_summary"]["model_version"] == "lgbm_v1"
     assert "ML" in result["message"]
+
+
+def test_target_arrival_soc_pct_overrides_default_reserve():
+    """User target_arrival_soc_pct=25 -> planner reserve 10 yerine 25'e gore.
+    Single-stop senaryosu icin sadece varis SOC'unun reserve_soc + arrival_bonus
+    'tan etkilendigini dogrula."""
+    planner = ChargingPlanner()
+
+    vehicle = {
+        "usable_battery_kwh": 60,
+        "ideal_consumption_wh_km": 180,
+    }
+    route_context = {
+        "route": {"distance_km": 300, "duration_min": 260},
+        "stations": [],
+    }
+    simulation_result = {
+        "initial_soc": 80,
+        "total_energy_kwh": 54,
+        "segments": [
+            {"cumulative_distance_km": 100, "soc_after": 60},
+            {"cumulative_distance_km": 200, "soc_after": 32},
+            {"cumulative_distance_km": 300, "soc_after": 6},
+        ],
+    }
+    charge_need_with_target = {
+        "needs_charging": True,
+        "reserve_soc_percent": 10,
+        "target_arrival_soc_pct": 25,
+    }
+    selector_result = {
+        "selected_station": {
+            "name": "DC1",
+            "distance_along_route_km": 150,
+            "remaining_distance_km": 150,
+            "detour_distance_km": 1.0,
+            "detour_minutes": 1.5,
+            "soc_at_arrival_percent": 46.0,
+            "target_soc_percent": 80.0,
+            "charge_minutes": 25.0,
+            "power_kw": 120,
+        },
+    }
+
+    result = planner.build_plan(
+        vehicle=vehicle,
+        route_context=route_context,
+        simulation_result=simulation_result,
+        charge_need=charge_need_with_target,
+        selector_result=selector_result,
+        strategy="fast",
+    )
+
+    # User 25% varış istiyor; planner ya yeterli sarj eder ya da infeasible deklare eder.
+    if result.get("feasible"):
+        arrival = result["summary"]["projected_arrival_soc_percent"]
+        assert arrival >= 25.0, f"target_arrival_soc_pct=25 saglanmadi: {arrival}"
+
+
+def test_unreachable_destination_returns_no_feasible_plan():
+    """Initial SOC dusuk + istasyon yok -> infeasible mesaji net."""
+    planner = ChargingPlanner()
+
+    vehicle = {"usable_battery_kwh": 60, "ideal_consumption_wh_km": 180}
+    route_context = {
+        "route": {"distance_km": 500, "duration_min": 380},
+        "stations": [],
+    }
+    simulation_result = {
+        "initial_soc": 15,
+        "total_energy_kwh": 90,
+        "segments": [
+            {"cumulative_distance_km": 100, "soc_after": -10},
+            {"cumulative_distance_km": 500, "soc_after": -100},
+        ],
+    }
+    charge_need = {"needs_charging": True, "reserve_soc_percent": 10}
+    selector_result = {"selected_station": None}
+
+    result = planner.build_plan(
+        vehicle=vehicle,
+        route_context=route_context,
+        simulation_result=simulation_result,
+        charge_need=charge_need,
+        selector_result=selector_result,
+        strategy="balanced",
+    )
+
+    assert result["status"] == "no_feasible_plan"
+    assert result["feasible"] is False

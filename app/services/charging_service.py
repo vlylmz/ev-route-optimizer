@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import os
 import time
@@ -11,6 +12,9 @@ from typing import Any, Dict, List, Optional, Tuple
 import requests
 
 from app.core.geo_utils import haversine_km as _haversine_km
+
+
+logger = logging.getLogger("ev_route_optimizer.charging")
 
 
 Coordinate = Tuple[float, float]  # (lat, lon)
@@ -132,7 +136,7 @@ class OpenChargeMapService:
 
     def _debug_print(self, message: str) -> None:
         if self.debug:
-            print(message)
+            logger.debug(message)
 
     @staticmethod
     def _normalize_connection(item: Dict[str, Any]) -> ChargingConnection:

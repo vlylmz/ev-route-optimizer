@@ -183,6 +183,56 @@ def test_uphill_consumption_higher_with_efficiency_correction(vehicle):
     assert low_result.energy_used_kwh > high_result.energy_used_kwh
 
 
+def test_minus_10c_consumption_significantly_higher_than_20c(vehicle):
+    """-10C'de tuketim 20C'ye gore en az %15 yuksek (HVAC isitma + lityum verim)."""
+    mild = estimate_segment_energy(
+        vehicle=vehicle,
+        distance_km=50,
+        speed_kmh=100,
+        temp_c=20,
+        grade_pct=0,
+        start_soc_pct=80,
+    )
+
+    cold = estimate_segment_energy(
+        vehicle=vehicle,
+        distance_km=50,
+        speed_kmh=100,
+        temp_c=-10,
+        grade_pct=0,
+        start_soc_pct=80,
+    )
+
+    increase_ratio = (cold.energy_used_kwh - mild.energy_used_kwh) / mild.energy_used_kwh
+    assert increase_ratio > 0.15, f"-10C artisi %{increase_ratio*100:.1f} (>%15 bekleniyordu)"
+
+
+def test_140kmh_consumption_higher_than_90kmh(vehicle):
+    """140 km/h tuketimi 90 km/h'tan anlamli sekilde yuksek (speed_delta)."""
+    cruise = estimate_segment_energy(
+        vehicle=vehicle,
+        distance_km=50,
+        speed_kmh=90,
+        temp_c=20,
+        grade_pct=0,
+        start_soc_pct=80,
+    )
+
+    fast = estimate_segment_energy(
+        vehicle=vehicle,
+        distance_km=50,
+        speed_kmh=140,
+        temp_c=20,
+        grade_pct=0,
+        start_soc_pct=80,
+    )
+
+    assert fast.energy_used_kwh > cruise.energy_used_kwh
+    # Anlamli fark: minimum %10
+    increase_ratio = (fast.energy_used_kwh - cruise.energy_used_kwh) / cruise.energy_used_kwh
+    assert increase_ratio > 0.10
+
+
 def test_high_temperature_increases_consumption(vehicle):
     """28C ustu sicaklikta klima yuku tuketimi artirir."""
     mild = estimate_segment_energy(
