@@ -271,15 +271,25 @@ class ChargingPlanner:
         simulation_result: Dict[str, Any],
         charge_need: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """build_plan'in temel metric setup'i: distance/duration/energy/consumption."""
+        """build_plan'in temel metric setup'i: distance/duration/energy/consumption.
+
+        route_duration_min: simulator strateji bazli total_drive_minutes uretiyorsa
+        onu kullan (fast/efficient arasi anlamli fark). Yoksa OSRM duration fallback.
+        """
         route = _pick(route_context, "route", default={}) or {}
         route_distance_km = _safe_float(
             _pick(route, "distance_km", "total_distance_km"), 0.0
         )
-        route_duration_min = _safe_float(
+        # Strateji bazli surus suresi (varsa) -> OSRM duration yerine.
+        sim_drive_minutes = _safe_float(
+            _pick(simulation_result, "total_drive_minutes", default=None),
+            0.0,
+        )
+        osrm_duration_min = _safe_float(
             _pick(route, "duration_min", "duration_minutes", "estimated_duration_min"),
             0.0,
         )
+        route_duration_min = sim_drive_minutes if sim_drive_minutes > 0 else osrm_duration_min
         total_energy_kwh = _safe_float(
             _pick(simulation_result, "total_energy_kwh", "energy_used_kwh"), 0.0
         )

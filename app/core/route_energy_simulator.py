@@ -37,6 +37,9 @@ class RouteEnergySimulationResult:
     below_reserve: bool
     segment_count: int
     segments: List[RouteEnergySegmentResult]
+    # Strateji bazli surus suresi (segment hizlarindan turetilen toplam dakika).
+    # OSRM duration ile karistirmamak icin ayri tutuyoruz.
+    total_drive_minutes: float = 0.0
     used_ml: bool = False
     ml_segment_count: int = 0
     heuristic_segment_count: int = 0
@@ -81,6 +84,7 @@ class RouteEnergySimulator:
 
         total_distance_km = 0.0
         total_energy_kwh = 0.0
+        total_drive_minutes = 0.0
         current_soc = float(start_soc_pct)
 
         duration_min = route_context["route"]["duration_min"]
@@ -164,6 +168,9 @@ class RouteEnergySimulator:
 
             total_distance_km += segment_result.distance_km
             total_energy_kwh += segment_result.energy_used_kwh
+            # Segment suresi = mesafe / hiz (strateji bazli speed yansir).
+            if segment_speed_kmh > 0:
+                total_drive_minutes += (segment_result.distance_km / segment_speed_kmh) * 60.0
             current_soc = segment_result.end_soc_pct
 
             if segment_result.used_ml:
@@ -192,6 +199,7 @@ class RouteEnergySimulator:
             below_reserve=current_soc < reserve_soc_pct,
             segment_count=len(results),
             segments=results,
+            total_drive_minutes=round(total_drive_minutes, 1),
             used_ml=ml_segment_count > 0,
             ml_segment_count=ml_segment_count,
             heuristic_segment_count=heuristic_segment_count,

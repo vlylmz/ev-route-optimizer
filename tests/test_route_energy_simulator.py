@@ -153,6 +153,26 @@ def test_simulator_falls_back_to_osrm_speed_when_no_limits():
     assert result.total_distance_km > 0
 
 
+def test_fast_mode_drive_minutes_lower_than_efficient():
+    """Fast modu daha hizli surdugu icin total_drive_minutes Verimli'den dusuk."""
+    simulator = RouteEnergySimulator()
+    vehicle = sample_vehicle()
+    route_context = sample_route_context()
+
+    fast = simulator.simulate(
+        vehicle=vehicle, route_context=route_context, start_soc_pct=80.0, strategy="fast"
+    )
+    efficient = simulator.simulate(
+        vehicle=vehicle, route_context=route_context, start_soc_pct=80.0, strategy="efficient"
+    )
+
+    assert fast.total_drive_minutes > 0
+    assert efficient.total_drive_minutes > 0
+    assert fast.total_drive_minutes < efficient.total_drive_minutes, (
+        f"fast={fast.total_drive_minutes} efficient={efficient.total_drive_minutes}"
+    )
+
+
 def test_fast_mode_consumes_more_energy_than_efficient():
     """Hiz profili: fast > balanced > efficient enerji tuketimi."""
     simulator = RouteEnergySimulator()
