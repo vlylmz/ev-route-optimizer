@@ -351,6 +351,11 @@ class ChargingStopSelector:
             self.default_station_power_kw,
         )
 
+        # HARD filter: power_kw <= 0 istasyon (park yeri veya bilinmeyen guc)
+        # aday olamaz. Aksi halde 4 dk gibi sahte sarj sureleri uretir.
+        if station_power_kw <= 0:
+            return None
+
         charge_minutes = self._estimate_charge_minutes(
             start_soc=soc_at_station,
             target_soc=target_soc,

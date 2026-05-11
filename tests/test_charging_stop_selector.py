@@ -147,6 +147,33 @@ def test_operational_false_station_is_filtered_out():
     assert result["candidates"] == []
 
 
+def test_zero_power_station_excluded_from_candidates():
+    """power_kw=0 olan park yeri / bilinmeyen guc istasyonu aday olamaz."""
+    selector = ChargingStopSelector()
+    vehicle, route_context, simulation_result, charge_need = build_common_data()
+
+    route_context["stations"] = [
+        {
+            "name": "Royal Park Yeri",
+            "distance_along_route_km": 150,
+            "distance_from_route_km": 0.5,
+            "power_kw": 0,  # OCM'den gelen park yeri kayitlari
+            "is_operational": True,
+        },
+    ]
+
+    result = selector.select_stop(
+        vehicle=vehicle,
+        route_context=route_context,
+        simulation_result=simulation_result,
+        charge_need=charge_need,
+        strategy="fast",
+    )
+
+    assert result["selected_station"] is None
+    assert result["candidates"] == []
+
+
 def test_socket_type_mismatch_eliminates_candidate():
     """Vehicle CHAdeMO bekliyorsa CCS-only istasyon aday olamaz."""
     selector = ChargingStopSelector()
