@@ -475,18 +475,15 @@ export function MapView({
     }
   }
 
-  // Follow mode — haritayı GPS pozisyonuna kilitle
-  // Padding ile aracı ekranın alt 1/3'ünde tutarız (gerçek nav görünümü).
+  // Follow mode — haritayi GPS pozisyonuna kilitle.
+  // Padding=0: arac ekranin tam ortasinda durur (kullanici tercihi).
   // Sim modunda rAF her 16ms tetikledigi icin easeTo cok kisa olmali ki
   // gecisler ust uste binip yarida kesilmesin.
   useEffect(() => {
     if (!navigationMode || !followMode || !pos || !mapRef.current) return
     const map = mapRef.current.getMap()
-    const canvas = map.getCanvas()
-    const h = canvas.clientHeight || 700
-    const padding = { top: 0, bottom: Math.round(h * 0.55), left: 0, right: 0 }
+    const padding = { top: 0, bottom: 0, left: 0, right: 0 }
     if (simEnabled) {
-      // Tight follow — aniden yapis, yumusak gecis surekli kesilmesin.
       map.jumpTo({
         center: [pos.lon, pos.lat],
         bearing: heading,
