@@ -115,6 +115,13 @@ class RouteResponse(BaseModel):
         default_factory=list,
         description="Rota koordinatları [[lat,lon], ...]",
     )
+    cumulative_distances: List[float] = Field(
+        default_factory=list,
+        description=(
+            "geometry ile ayni uzunlukta kumulatif mesafe (km). Frontend "
+            "yeniden haversine sum yapmamali; bu listeyi kullanmali."
+        ),
+    )
     elevation_profile: List[Dict[str, Any]] = Field(default_factory=list)
     slope_segments: List[Dict[str, Any]] = Field(default_factory=list)
     weather: Dict[str, Any] = Field(default_factory=dict)

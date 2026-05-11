@@ -197,6 +197,7 @@ export const RouteResponseSchema = z.object({
     max_downhill_grade_pct: z.number().nullable().optional(),
   }),
   geometry: z.array(z.array(z.number())),
+  cumulative_distances: z.array(z.number()).default([]),
   elevation_profile: z.array(z.record(z.string(), z.unknown())).default([]),
   slope_segments: z.array(z.record(z.string(), z.unknown())).default([]),
   weather: z.record(z.string(), z.unknown()).default({}),

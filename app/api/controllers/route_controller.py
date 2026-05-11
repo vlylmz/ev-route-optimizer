@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.api.dependencies import get_route_context_service
 from app.api.schemas import RouteRequest, RouteResponse, RouteSummary
+from app.core.geo_utils import build_route_points
 from app.services.route_context_service import (
     RouteContextService,
     RouteContextServiceError,
@@ -51,10 +52,16 @@ def build_route(
         ) from exc
 
     summary = RouteSummary(**context["summary"])
+    geometry = context["route"].get("geometry", [])
+
+    # Frontend tekrar haversine sum yapmamali: kumulatif mesafeyi tek noktada hesapla.
+    route_points = build_route_points(geometry)
+    cumulative_distances = [p.cumulative_distance_km for p in route_points]
 
     return RouteResponse(
         summary=summary,
-        geometry=context["route"].get("geometry", []),
+        geometry=geometry,
+        cumulative_distances=cumulative_distances,
         elevation_profile=context["elevation"].get("elevation_profile", []),
         slope_segments=context["elevation"].get("slope_segments", []),
         weather=context.get("weather", {}),

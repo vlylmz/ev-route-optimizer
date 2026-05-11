@@ -176,6 +176,20 @@ function App() {
     })
   }, [optimizeM.data, activeProfileKey, reservations])
 
+  // Sim batarya göstergesi için: aktif araç + aktif profilin varış SOC'si
+  const activeVehicle = useMemo(
+    () => vehiclesQ.data?.find((v) => v.id === submitted?.vehicle_id) ?? null,
+    [vehiclesQ.data, submitted?.vehicle_id],
+  )
+
+  const activeProfileFinalSoc = useMemo(() => {
+    if (!optimizeM.data || !activeProfileKey) return null
+    const profile = optimizeM.data.profiles.find(
+      (p) => p.key === activeProfileKey,
+    )
+    return profile?.final_soc_pct ?? optimizeM.data.final_soc_pct ?? null
+  }, [optimizeM.data, activeProfileKey])
+
   const handleStartNav = () => {
     if (geometry.length < 2) return
     setNavMode(true)
@@ -218,6 +232,7 @@ function App() {
       {/* Tam ekran harita */}
       <MapView
         geometry={geometry}
+        cumulativeDistancesKm={routeM.data?.cumulative_distances ?? []}
         stations={stations as Parameters<typeof MapView>[0]['stations']}
         start={submitted?.start}
         end={submitted?.end}
@@ -225,6 +240,9 @@ function App() {
         speedLimits={speedLimitsM.data?.segments ?? []}
         highlightedStops={activeProfileStops}
         vehicleId={submitted?.vehicle_id}
+        initialSocPct={optimizeM.data?.initial_soc_pct}
+        finalSocPct={activeProfileFinalSoc ?? undefined}
+        usableBatteryKwh={activeVehicle?.usable_battery_kwh}
       />
 
       {/* Sidebar Aç butonu */}

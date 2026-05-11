@@ -43,6 +43,9 @@ interface HighlightedStop {
 
 interface Props {
   geometry: number[][] // [[lat, lon], ...]
+  // Backend tarafindan hesaplanan kumulatif mesafe (km). Yoksa client-side
+  // haversine sum'a duser (geriye uyumluluk).
+  cumulativeDistancesKm?: number[]
   stations?: Station[]
   start?: { lat: number; lon: number }
   end?: { lat: number; lon: number }
@@ -60,6 +63,7 @@ const ANKARA_CENTER = { lng: 32.85, lat: 39.92, zoom: 6 }
 
 export function MapView({
   geometry,
+  cumulativeDistancesKm,
   stations = [],
   start,
   end,
@@ -107,9 +111,17 @@ export function MapView({
     }
   }, [geometry, hasRoute])
 
-  // Rota geometrisinin kümülatif mesafe profili (km)
+  // Rota geometrisinin kumulatif mesafe profili (km).
+  // Backend RouteResponse.cumulative_distances dolu ise onu kullan; aksi halde
+  // client-side haversine sum (eski rotalar / fallback).
   const cumulativeDistances = useMemo(() => {
     if (!hasRoute) return [] as number[]
+    if (
+      cumulativeDistancesKm &&
+      cumulativeDistancesKm.length === geometry.length
+    ) {
+      return cumulativeDistancesKm
+    }
     const arr: number[] = [0]
     for (let i = 1; i < geometry.length; i++) {
       const d = haversineKm(
@@ -121,7 +133,7 @@ export function MapView({
       arr.push(arr[i - 1] + d)
     }
     return arr
-  }, [geometry, hasRoute])
+  }, [geometry, hasRoute, cumulativeDistancesKm])
 
   // Sim modunda rota'yı simKm'de "traveled" ve "remaining" olarak böl
   const splitRoute = useMemo(() => {

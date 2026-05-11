@@ -126,6 +126,24 @@ def test_build_route_context_with_mocked_services():
     assert len(context["stations"]) == 2
 
 
+def test_route_response_cumulative_distances_matches_geometry_length():
+    """RouteResponse.cumulative_distances geometry ile ayni uzunluk + monoton artan."""
+    from app.core.geo_utils import build_route_points
+
+    geometry = [
+        [39.9208, 32.8541],
+        [39.5000, 32.0000],
+        [39.0000, 31.0000],
+    ]
+    points = build_route_points(geometry)
+    cumulative = [p.cumulative_distance_km for p in points]
+
+    assert len(cumulative) == len(geometry)
+    assert cumulative[0] == 0.0
+    assert cumulative[1] > 0
+    assert cumulative[2] > cumulative[1]
+
+
 def test_route_context_cache_hit_skips_ocm_call():
     """Ayni rota icin ikinci build_route_context: rota cagrilir, OCM atlanir."""
 
