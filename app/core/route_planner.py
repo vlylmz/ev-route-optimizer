@@ -444,11 +444,12 @@ class RoutePlanner:
 
         return None
 
-    def _extract_final_soc(self, simulation_result: Dict[str, Any]) -> float:
+    def _extract_final_soc(self, simulation_result: Dict[str, Any]) -> float:  # noqa: D401
         direct_soc = _pick(
             simulation_result,
             "final_soc",
             "end_soc",
+            "end_soc_pct",
             "remaining_soc",
             default=None,
         )
@@ -459,7 +460,7 @@ class RoutePlanner:
         if segments:
             last_segment = segments[-1]
             return _safe_float(
-                _pick(last_segment, "soc_after", "ending_soc", "end_soc", "remaining_soc"),
+                _pick(last_segment, "soc_after", "ending_soc", "end_soc", "end_soc_pct", "remaining_soc"),
                 0.0,
             )
 
