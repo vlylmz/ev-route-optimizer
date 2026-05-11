@@ -200,12 +200,13 @@ def main() -> None:
 
     df.to_csv(output_csv, index=False)
 
-    print(f"Dataset oluşturuldu: {output_csv}")
-    print(f"Satır sayısı: {len(df)}")
-    print("\nİlk 5 satır:")
+    # PowerShell cp1252 ile uyumsuzluk olmasin diye ASCII print.
+    print(f"Dataset olusturuldu: {output_csv}")
+    print(f"Satir sayisi: {len(df)}")
+    print("\nIlk 5 satir:")
     print(df.head())
-    print("\nHedef ortalama tüketim (Wh/km):", round(df["target_wh_km"].mean(), 2))
-    print("Min/Max hedef tüketim:", round(df["target_wh_km"].min(), 2), "/", round(df["target_wh_km"].max(), 2))
+    print("\nHedef ortalama tuketim (Wh/km):", round(df["target_wh_km"].mean(), 2))
+    print("Min/Max hedef tuketim:", round(df["target_wh_km"].min(), 2), "/", round(df["target_wh_km"].max(), 2))
 
 
 if __name__ == "__main__":
