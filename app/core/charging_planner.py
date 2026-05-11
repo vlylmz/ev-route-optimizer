@@ -71,37 +71,19 @@ class ChargingPlanner:
             )
         )
 
-        route = _pick(route_context, "route", default={}) or {}
-        route_distance_km = _safe_float(
-            _pick(route, "distance_km", "total_distance_km"),
-            0.0,
-        )
-        route_duration_min = _safe_float(
-            _pick(route, "duration_min", "duration_minutes", "estimated_duration_min"),
-            0.0,
-        )
-
-        total_energy_kwh = _safe_float(
-            _pick(simulation_result, "total_energy_kwh", "energy_used_kwh"),
-            0.0,
-        )
-        final_soc_without_charge = self._extract_final_soc(simulation_result)
-
-        usable_battery_kwh = _safe_float(
-            _pick(vehicle, "usable_battery_kwh", "battery_capacity_kwh"),
-            0.0,
-        )
-
-        avg_consumption_kwh_per_km = self._resolve_avg_consumption(
-            route_distance_km=route_distance_km,
-            total_energy_kwh=total_energy_kwh,
+        metrics = self._compute_trip_metrics(
             vehicle=vehicle,
-        )
-
-        ml_summary = self._extract_ml_summary(
+            route_context=route_context,
             simulation_result=simulation_result,
             charge_need=charge_need,
         )
+        route_distance_km = metrics["route_distance_km"]
+        route_duration_min = metrics["route_duration_min"]
+        total_energy_kwh = metrics["total_energy_kwh"]
+        final_soc_without_charge = metrics["final_soc_without_charge"]
+        usable_battery_kwh = metrics["usable_battery_kwh"]
+        avg_consumption_kwh_per_km = metrics["avg_consumption_kwh_per_km"]
+        ml_summary = metrics["ml_summary"]
 
         if not needs_charging:
             return {
@@ -143,31 +125,9 @@ class ChargingPlanner:
                 "message": "Uygun bir şarj planı oluşturulamadı.",
             }
 
-        reserve_soc = _safe_float(
-            _pick(
-                charge_need,
-                "reserve_soc_percent",
-                "min_soc_percent",
-                "reserve_soc_pct",
-                default=self.reserve_soc_default,
-            ),
-            self.reserve_soc_default,
-        )
-
-        # Kullanıcının varış SOC tercihi (varsa) — varışta minimum eşik
-        # reserve_soc in-trip safety floor; arrival_target sadece bitişte uygulanır.
-        target_arrival_soc = _safe_float(
-            _pick(charge_need, "target_arrival_soc_pct", default=None),
-            reserve_soc,
-        )
-        # Strateji bazli arrival bonus — dengeli profil ekstra %10 marj ister,
-        # boylece tek-stop ile sinirda gecmek yerine multi-stop tercih eder
-        # (Hizli ile ayrismis olur).
-        strategy_arrival_bonus = (
-            10.0 if strategy == "balanced" else 0.0
-        )
-        effective_arrival_floor = (
-            max(reserve_soc, target_arrival_soc) + strategy_arrival_bonus
+        reserve_soc, target_arrival_soc, effective_arrival_floor = self._resolve_arrival_floor(
+            charge_need=charge_need,
+            strategy=strategy,
         )
 
         station_name = _pick(selected_station, "name", "title", default="İstasyon")
@@ -204,30 +164,14 @@ class ChargingPlanner:
             0.0,
         )
 
-        # Min duraklama süresi: kullanıcı 1-2 dk için durmaz.
-        # Süre çok kısaysa, target SOC'yi yükselt — gerekirse %90'a kadar.
-        if (
-            self.min_stop_minutes > 0
-            and charge_minutes < self.min_stop_minutes
-            and station_power_kw > 0
-        ):
-            extended_target = self.curve_service.find_target_soc_for_minutes(
-                vehicle=vehicle,
-                station_kw=station_power_kw,
-                start_soc_pct=arrival_soc_at_station,
-                target_minutes=self.min_stop_minutes,
-                usable_battery_kwh=usable_battery_kwh,
-                max_target=90.0,
-            )
-            if extended_target > target_soc_percent:
-                target_soc_percent = extended_target
-                charge_minutes = self.curve_service.compute_charge_minutes(
-                    vehicle=vehicle,
-                    station_kw=station_power_kw,
-                    start_soc_pct=arrival_soc_at_station,
-                    target_soc_pct=target_soc_percent,
-                    usable_battery_kwh=usable_battery_kwh,
-                )
+        target_soc_percent, charge_minutes = self._apply_min_stop_extension(
+            vehicle=vehicle,
+            station_power_kw=station_power_kw,
+            arrival_soc_at_station=arrival_soc_at_station,
+            target_soc_percent=target_soc_percent,
+            charge_minutes=charge_minutes,
+            usable_battery_kwh=usable_battery_kwh,
+        )
 
         post_charge_remaining_distance_km = remaining_distance_km + detour_distance_km
         required_post_charge_energy_kwh = (
@@ -312,30 +256,141 @@ class ChargingPlanner:
         if multi_stop_result is not None and multi_stop_result.get("feasible"):
             return multi_stop_result
 
-        # Hem tek-durak hem cok-durakli infeasible. Multi-stop genelde tek-stop'tan
-        # daha bilgili (birden cok durak listesi gosteriyor); en yuksek varis SOC'i
-        # olani sec. Boylece "%0 varis tek durak" yerine "%marjinal cok durak" gosteririz.
-        if multi_stop_result is not None and multi_stop_result.get("recommended_stops"):
-            single_arrival = _safe_float(
-                _pick(
-                    single_stop_result.get("summary", {}),
-                    "projected_arrival_soc_percent",
-                    default=0.0,
-                ),
-                0.0,
-            )
-            multi_arrival = _safe_float(
-                _pick(
-                    multi_stop_result.get("summary", {}),
-                    "projected_arrival_soc_percent",
-                    default=0.0,
-                ),
-                0.0,
-            )
-            if multi_arrival > single_arrival:
-                return multi_stop_result
+        # Hem single hem multi infeasible: daha bilgili olani sec.
+        return self._select_better_plan(single_stop_result, multi_stop_result)
 
-        return single_stop_result
+    # =====================================================================
+    # build_plan helper'lari
+    # =====================================================================
+
+    def _compute_trip_metrics(
+        self,
+        *,
+        vehicle: Dict[str, Any],
+        route_context: Dict[str, Any],
+        simulation_result: Dict[str, Any],
+        charge_need: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """build_plan'in temel metric setup'i: distance/duration/energy/consumption."""
+        route = _pick(route_context, "route", default={}) or {}
+        route_distance_km = _safe_float(
+            _pick(route, "distance_km", "total_distance_km"), 0.0
+        )
+        route_duration_min = _safe_float(
+            _pick(route, "duration_min", "duration_minutes", "estimated_duration_min"),
+            0.0,
+        )
+        total_energy_kwh = _safe_float(
+            _pick(simulation_result, "total_energy_kwh", "energy_used_kwh"), 0.0
+        )
+        final_soc_without_charge = self._extract_final_soc(simulation_result)
+        usable_battery_kwh = _safe_float(
+            _pick(vehicle, "usable_battery_kwh", "battery_capacity_kwh"), 0.0
+        )
+        avg_consumption_kwh_per_km = self._resolve_avg_consumption(
+            route_distance_km=route_distance_km,
+            total_energy_kwh=total_energy_kwh,
+            vehicle=vehicle,
+        )
+        ml_summary = self._extract_ml_summary(
+            simulation_result=simulation_result, charge_need=charge_need,
+        )
+        return {
+            "route_distance_km": route_distance_km,
+            "route_duration_min": route_duration_min,
+            "total_energy_kwh": total_energy_kwh,
+            "final_soc_without_charge": final_soc_without_charge,
+            "usable_battery_kwh": usable_battery_kwh,
+            "avg_consumption_kwh_per_km": avg_consumption_kwh_per_km,
+            "ml_summary": ml_summary,
+        }
+
+    def _resolve_arrival_floor(
+        self,
+        *,
+        charge_need: Dict[str, Any],
+        strategy: str,
+    ) -> tuple[float, float, float]:
+        """Reserve SOC + user target -> effective_arrival_floor.
+        Donus: (reserve_soc, target_arrival_soc, effective_arrival_floor)."""
+        reserve_soc = _safe_float(
+            _pick(
+                charge_need,
+                "reserve_soc_percent",
+                "min_soc_percent",
+                "reserve_soc_pct",
+                default=self.reserve_soc_default,
+            ),
+            self.reserve_soc_default,
+        )
+        target_arrival_soc = _safe_float(
+            _pick(charge_need, "target_arrival_soc_pct", default=None),
+            reserve_soc,
+        )
+        # Dengeli profil multi-stop'a egilim icin ek %10 marj.
+        strategy_arrival_bonus = 10.0 if strategy == "balanced" else 0.0
+        effective_arrival_floor = (
+            max(reserve_soc, target_arrival_soc) + strategy_arrival_bonus
+        )
+        return reserve_soc, target_arrival_soc, effective_arrival_floor
+
+    def _apply_min_stop_extension(
+        self,
+        *,
+        vehicle: Dict[str, Any],
+        station_power_kw: float,
+        arrival_soc_at_station: float,
+        target_soc_percent: float,
+        charge_minutes: float,
+        usable_battery_kwh: float,
+    ) -> tuple[float, float]:
+        """Kullanici 1-2 dk icin durmaz. Charge<min_stop ise target SOC'u yukselt."""
+        if (
+            self.min_stop_minutes <= 0
+            or charge_minutes >= self.min_stop_minutes
+            or station_power_kw <= 0
+        ):
+            return target_soc_percent, charge_minutes
+
+        extended_target = self.curve_service.find_target_soc_for_minutes(
+            vehicle=vehicle,
+            station_kw=station_power_kw,
+            start_soc_pct=arrival_soc_at_station,
+            target_minutes=self.min_stop_minutes,
+            usable_battery_kwh=usable_battery_kwh,
+            max_target=90.0,
+        )
+        if extended_target > target_soc_percent:
+            new_target = extended_target
+            new_minutes = self.curve_service.compute_charge_minutes(
+                vehicle=vehicle,
+                station_kw=station_power_kw,
+                start_soc_pct=arrival_soc_at_station,
+                target_soc_pct=new_target,
+                usable_battery_kwh=usable_battery_kwh,
+            )
+            return new_target, new_minutes
+        return target_soc_percent, charge_minutes
+
+    @staticmethod
+    def _select_better_plan(
+        single_result: Dict[str, Any],
+        multi_result: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Hem single hem multi infeasible ise daha bilgili olani (yuksek varis
+        SOC) dondur. Multi yoksa single dondur."""
+        if multi_result is None or not multi_result.get("recommended_stops"):
+            return single_result
+
+        single_arrival = _safe_float(
+            _pick(single_result.get("summary", {}), "projected_arrival_soc_percent", default=0.0),
+            0.0,
+        )
+        multi_arrival = _safe_float(
+            _pick(multi_result.get("summary", {}), "projected_arrival_soc_percent", default=0.0),
+            0.0,
+        )
+        return multi_result if multi_arrival > single_arrival else single_result
 
     def _try_multi_stop(
         self,
