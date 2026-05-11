@@ -38,6 +38,8 @@ class ChargingPlanner:
         min_stop_minutes: float = 10.0,
         max_stops: int = 8,
         curve_service: Any = None,
+        use_dijkstra: bool = True,
+        dijkstra_station_limit: int = 100,
     ) -> None:
         from app.services.charging_curve_service import ChargingCurveService
 
@@ -46,6 +48,8 @@ class ChargingPlanner:
         self.min_stop_minutes = min_stop_minutes
         self.max_stops = max_stops
         self.curve_service = curve_service or ChargingCurveService()
+        self.use_dijkstra = use_dijkstra
+        self.dijkstra_station_limit = dijkstra_station_limit
 
     def build_plan(
         self,
@@ -379,6 +383,26 @@ class ChargingPlanner:
             100.0,
         )
 
+        # Dijkstra solver: makul istasyon sayisinda once optimal zinciri dene.
+        # Basarisiz olursa greedy'e dus.
+        if self.use_dijkstra and 0 < len(enriched) <= self.dijkstra_station_limit:
+            dijkstra_plan = self._try_dijkstra_solver(
+                enriched=enriched,
+                vehicle=vehicle,
+                strategy=strategy,
+                route_distance_km=route_distance_km,
+                route_duration_min=route_duration_min,
+                total_energy_kwh=total_energy_kwh,
+                ml_summary=ml_summary,
+                initial_soc=initial_soc,
+                avg_consumption_kwh_per_km=avg_consumption_kwh_per_km,
+                usable_battery_kwh=usable_battery_kwh,
+                reserve_soc=reserve_soc,
+                target_arrival_soc=target_arrival_soc,
+            )
+            if dijkstra_plan is not None:
+                return dijkstra_plan
+
         avg_speed_kmh = (
             (route_distance_km / route_duration_min) * 60.0
             if route_duration_min > 0
@@ -678,6 +702,143 @@ class ChargingPlanner:
             },
             "ml_summary": ml_summary,
             "message": message,
+        }
+
+    def _try_dijkstra_solver(
+        self,
+        *,
+        enriched: List[Dict[str, Any]],
+        vehicle: Dict[str, Any],
+        strategy: str,
+        route_distance_km: float,
+        route_duration_min: float,
+        total_energy_kwh: float,
+        ml_summary: Dict[str, Any],
+        initial_soc: float,
+        avg_consumption_kwh_per_km: float,
+        usable_battery_kwh: float,
+        reserve_soc: float,
+        target_arrival_soc: Optional[float] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Dijkstra solver ile multi-stop zincir kurmayi dener.
+        Basarili olursa build_plan output formatinda dict dondurur; aksi None.
+        """
+        from app.core.multi_stop_solver import MultiStopDijkstraSolver
+
+        # strateji bazli max_target_soc + arrival_floor secimleri planner'in
+        # mevcut mantigini takip eder.
+        if strategy == "fast":
+            max_target_soc = 85.0
+            arrival_bonus = 0.0
+        elif strategy == "efficient":
+            max_target_soc = 75.0
+            arrival_bonus = 0.0
+        else:
+            max_target_soc = 80.0
+            arrival_bonus = 10.0
+
+        effective_arrival_floor = max(
+            reserve_soc,
+            float(target_arrival_soc) if target_arrival_soc is not None else 0.0,
+        ) + arrival_bonus
+
+        avg_speed_kmh = (
+            (route_distance_km / route_duration_min) * 60.0
+            if route_duration_min > 0
+            else 80.0
+        )
+
+        def charge_minutes_fn(station_kw: float, start_soc: float, target_soc: float) -> float:
+            return self.curve_service.compute_charge_minutes(
+                vehicle=vehicle,
+                station_kw=station_kw,
+                start_soc_pct=start_soc,
+                target_soc_pct=target_soc,
+                usable_battery_kwh=usable_battery_kwh,
+            )
+
+        solver = MultiStopDijkstraSolver(
+            soc_bucket_pct=10,
+            max_target_soc_pct=max_target_soc,
+            avg_speed_kmh=avg_speed_kmh,
+        )
+
+        solution = solver.solve(
+            stations=enriched,
+            route_distance_km=route_distance_km,
+            usable_battery_kwh=usable_battery_kwh,
+            avg_consumption_kwh_per_km=avg_consumption_kwh_per_km,
+            initial_soc_pct=initial_soc,
+            reserve_soc_pct=reserve_soc,
+            arrival_soc_floor_pct=effective_arrival_floor,
+            charge_minutes_fn=charge_minutes_fn,
+        )
+        if solution is None or not solution.chain:
+            return None
+
+        # Solver chain'ini planner output formatina dönüştür.
+        stops_payload: List[Dict[str, Any]] = []
+        current_soc = initial_soc
+        current_distance = 0.0
+        for stop in solution.chain:
+            # Solver target_soc_percent ve charge_minutes ekledi.
+            target_soc = float(stop.get("target_soc_percent", current_soc))
+            charge_min = float(stop.get("charge_minutes", 0.0))
+            distance_along = float(stop.get("distance_along_route_km", 0.0))
+            leg_km = max(0.0, distance_along - current_distance)
+            soc_at_arrival = current_soc - (leg_km * avg_consumption_kwh_per_km / usable_battery_kwh) * 100.0
+
+            detour_km = float(stop.get("detour_distance_km", 0.0))
+            detour_min = (detour_km / 40.0) * 60.0 if detour_km > 0 else 0.0
+
+            stops_payload.append({
+                **stop,
+                "soc_at_arrival_percent": round(soc_at_arrival, 2),
+                "target_soc_percent": round(target_soc, 1),
+                "charge_minutes": round(charge_min, 1),
+                "detour_distance_km": round(detour_km, 2),
+                "detour_minutes": round(detour_min, 1),
+                "total_stop_minutes": round(charge_min + detour_min, 1),
+            })
+            current_soc = target_soc
+            current_distance = distance_along
+
+        remaining_after_last = max(route_distance_km - current_distance, 0.0)
+        final_soc_drop_pct = (
+            (remaining_after_last * avg_consumption_kwh_per_km) / usable_battery_kwh
+        ) * 100.0
+        projected_arrival_soc = current_soc - final_soc_drop_pct
+        feasible = projected_arrival_soc >= effective_arrival_floor
+
+        total_charge_minutes = sum(s["charge_minutes"] for s in stops_payload)
+        total_detour_minutes = sum(s["detour_minutes"] for s in stops_payload)
+        total_detour_km = sum(s["detour_distance_km"] for s in stops_payload)
+        total_trip_minutes = route_duration_min + total_detour_minutes + total_charge_minutes
+        total_trip_energy_kwh = total_energy_kwh + total_detour_km * avg_consumption_kwh_per_km
+
+        message = (
+            f"{len(stops_payload)} durakli plan olusturuldu (Dijkstra). "
+            f"Tahmini varis SOC: %{projected_arrival_soc:.1f}, "
+            f"toplam sure: {total_trip_minutes:.1f} dk."
+        )
+
+        return {
+            "status": "ok" if feasible else "risky_plan",
+            "strategy": strategy,
+            "needs_charging": True,
+            "feasible": feasible,
+            "recommended_stops": stops_payload,
+            "summary": {
+                "stop_count": len(stops_payload),
+                "charge_minutes": round(total_charge_minutes, 1),
+                "detour_minutes": round(total_detour_minutes, 1),
+                "total_trip_minutes": round(total_trip_minutes, 1),
+                "total_energy_kwh": round(total_trip_energy_kwh, 2),
+                "projected_arrival_soc_percent": round(projected_arrival_soc, 2),
+            },
+            "ml_summary": ml_summary,
+            "message": message,
+            "solver": "dijkstra",
         }
 
     def _enrich_all_stations(
