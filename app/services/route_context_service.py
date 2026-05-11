@@ -22,12 +22,14 @@ class RouteContextService:
         elevation_service: Optional[OpenElevationService] = None,
         weather_service: Optional[OpenMeteoWeatherService] = None,
         charging_service: Optional[OpenChargeMapService] = None,
+        speed_limit_service: Optional[Any] = None,
         station_cache_ttl_seconds: float = 3600.0,
     ) -> None:
         self.routing_service = routing_service or OSRMRoutingService()
         self.elevation_service = elevation_service or OpenElevationService()
         self.weather_service = weather_service or OpenMeteoWeatherService()
         self.charging_service = charging_service or OpenChargeMapService()
+        self.speed_limit_service = speed_limit_service
         self.station_cache_ttl_seconds = station_cache_ttl_seconds
         # Key: (start_round, end_round, distance_km, query_every_n).
         # Value: (timestamp, station_dicts).
@@ -44,6 +46,7 @@ class RouteContextService:
         station_distance_km: float = 5.0,
         station_max_results_per_query: int = 10,
         allow_station_fallback: bool = True,
+        include_speed_limits: bool = False,
     ) -> Dict[str, Any]:
         """
         Tüm dış servisleri birleştirip tek bir route context üretir.
@@ -93,7 +96,38 @@ class RouteContextService:
             allow_station_fallback=allow_station_fallback,
         )
 
-        # 5) Özet metrikler
+        # 5) Speed limit ozeti (opsiyonel)
+        speed_limit_summary: Dict[str, Any] = {}
+        speed_limit_segments: List[Dict[str, Any]] = []
+        if include_speed_limits and self.speed_limit_service is not None:
+            try:
+                segments, source = self.speed_limit_service.get_segments(geometry)
+                limits = [
+                    float(seg.maxspeed_kmh) for seg in segments
+                    if getattr(seg, "maxspeed_kmh", None) is not None
+                ]
+                if limits:
+                    speed_limit_summary = {
+                        "max_speed_kmh": max(limits),
+                        "avg_speed_kmh": sum(limits) / len(limits),
+                        "min_speed_kmh": min(limits),
+                        "source": source,
+                        "segment_count": len(segments),
+                    }
+                speed_limit_segments = [
+                    {
+                        "start_index": seg.start_index,
+                        "end_index": seg.end_index,
+                        "maxspeed_kmh": seg.maxspeed_kmh,
+                        "highway": seg.highway,
+                    }
+                    for seg in segments
+                ]
+            except Exception:  # noqa: BLE001
+                speed_limit_summary = {}
+                speed_limit_segments = []
+
+        # 6) Özet metrikler
         slope_summary = self._build_slope_summary(elevation["slope_segments"])
 
         return {
@@ -110,6 +144,8 @@ class RouteContextService:
             },
             "weather": weather,
             "stations": stations,
+            "speed_limit_summary": speed_limit_summary,
+            "speed_limit_segments": speed_limit_segments,
             "summary": {
                 "distance_km": route["distance_km"],
                 "duration_min": route["duration_min"],

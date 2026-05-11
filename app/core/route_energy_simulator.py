@@ -98,6 +98,15 @@ class RouteEnergySimulator:
         # Otoyolda 130km/h legal limit; nadir gerekli ise 140'a izin ver.
         avg_speed_kmh = max(20.0, min(140.0, base_avg_speed_kmh * speed_factor))
 
+        # Speed limit summary varsa cap olarak uygula. Strateji bazli traffic
+        # factor: fast=1.00 (legal limit'e kadar), efficient=0.85, balanced=0.95.
+        speed_summary = route_context.get("speed_limit_summary") or {}
+        max_observed_limit = speed_summary.get("max_speed_kmh")
+        if max_observed_limit:
+            traffic_factor = {"fast": 1.00, "balanced": 0.95, "efficient": 0.85}.get(strategy, 0.95)
+            speed_cap = float(max_observed_limit) * traffic_factor
+            avg_speed_kmh = min(avg_speed_kmh, speed_cap)
+
         use_ml = self.use_ml_default if use_ml is None else use_ml
 
         results: List[RouteEnergySegmentResult] = []

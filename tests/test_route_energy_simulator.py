@@ -81,6 +81,42 @@ def test_route_energy_simulation_returns_valid_output():
     assert len(result.segments) == 3
 
 
+def test_simulator_uses_speed_limit_when_available():
+    """speed_limit_summary varsa avg_speed_kmh ona gore clamp edilir."""
+    simulator = RouteEnergySimulator()
+    vehicle = sample_vehicle()
+
+    # Yuksek OSRM hizi (140) ama speed limit 90 -> clamp.
+    rc = sample_route_context()
+    rc["route"]["duration_min"] = 100.0 / 140.0 * 60.0  # 140 km/h equivalent
+    rc["speed_limit_summary"] = {"max_speed_kmh": 90.0}
+
+    rc_unlimited = sample_route_context()
+    rc_unlimited["route"]["duration_min"] = 100.0 / 140.0 * 60.0
+
+    capped = simulator.simulate(
+        vehicle=vehicle, route_context=rc, start_soc_pct=80.0, strategy="fast"
+    )
+    unlimited = simulator.simulate(
+        vehicle=vehicle, route_context=rc_unlimited, start_soc_pct=80.0, strategy="fast"
+    )
+
+    # Limitli versiyon daha az enerji harcamali (daha dusuk hiz).
+    assert capped.total_energy_kwh < unlimited.total_energy_kwh
+
+
+def test_simulator_falls_back_to_osrm_speed_when_no_limits():
+    """speed_limit_summary yoksa avg_speed OSRM duration'dan turetilir."""
+    simulator = RouteEnergySimulator()
+    vehicle = sample_vehicle()
+    rc = sample_route_context()
+    # Default rc'de speed_limit_summary yok -> calismali, crash yok.
+    result = simulator.simulate(
+        vehicle=vehicle, route_context=rc, start_soc_pct=80.0
+    )
+    assert result.total_distance_km > 0
+
+
 def test_fast_mode_consumes_more_energy_than_efficient():
     """Hiz profili: fast > balanced > efficient enerji tuketimi."""
     simulator = RouteEnergySimulator()
