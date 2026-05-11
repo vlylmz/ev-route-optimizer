@@ -98,14 +98,28 @@ class RouteEnergySimulator:
         # Otoyolda 130km/h legal limit; nadir gerekli ise 140'a izin ver.
         avg_speed_kmh = max(20.0, min(140.0, base_avg_speed_kmh * speed_factor))
 
-        # Speed limit summary varsa cap olarak uygula. Strateji bazli traffic
-        # factor: fast=1.00 (legal limit'e kadar), efficient=0.85, balanced=0.95.
+        traffic_factor = {"fast": 1.00, "balanced": 0.95, "efficient": 0.85}.get(strategy, 0.95)
+
+        # Speed limit summary varsa global avg_speed_kmh cap (fallback).
         speed_summary = route_context.get("speed_limit_summary") or {}
         max_observed_limit = speed_summary.get("max_speed_kmh")
         if max_observed_limit:
-            traffic_factor = {"fast": 1.00, "balanced": 0.95, "efficient": 0.85}.get(strategy, 0.95)
             speed_cap = float(max_observed_limit) * traffic_factor
             avg_speed_kmh = min(avg_speed_kmh, speed_cap)
+
+        # Per-segment speed limit lookup hazirligi.
+        speed_limit_segments = route_context.get("speed_limit_segments") or []
+        geometry = route_context.get("route", {}).get("geometry", []) or []
+        seg_spatial_index = None
+        if speed_limit_segments and geometry:
+            from app.core.geo_utils import RoutePoint, RouteSpatialIndex
+            # Geometry coordinatlarini RoutePoint'lerle sar; spatial index ile
+            # her slope_segment koordinatina en yakin geometry index'i hizli bul.
+            seg_points = [
+                RoutePoint(lat=float(g[0]), lon=float(g[1]), cumulative_distance_km=float(i))
+                for i, g in enumerate(geometry)
+            ]
+            seg_spatial_index = (seg_points, RouteSpatialIndex(seg_points))
 
         use_ml = self.use_ml_default if use_ml is None else use_ml
 
@@ -118,10 +132,27 @@ class RouteEnergySimulator:
             distance_km = float(seg["distance_km"])
             grade_pct = float(seg["grade_pct"])
 
+            # Per-segment speed limit lookup (varsa). Yoksa global avg_speed_kmh.
+            segment_speed_kmh = avg_speed_kmh
+            if seg_spatial_index is not None:
+                seg_speed_limit = self._find_segment_speed_limit(
+                    seg_start=tuple(seg["start"]),
+                    seg_end=tuple(seg["end"]),
+                    seg_points=seg_spatial_index[0],
+                    spatial_index=seg_spatial_index[1],
+                    speed_limit_segments=speed_limit_segments,
+                )
+                if seg_speed_limit is not None:
+                    # Per-segment limit: traffic factor uygula, mevcut avg ile min al.
+                    segment_speed_kmh = min(
+                        avg_speed_kmh,
+                        seg_speed_limit * traffic_factor,
+                    )
+
             segment_result = self._simulate_segment(
                 vehicle=vehicle,
                 distance_km=distance_km,
-                speed_kmh=avg_speed_kmh,
+                speed_kmh=segment_speed_kmh,
                 temp_c=avg_temp_c,
                 grade_pct=grade_pct,
                 start_soc_pct=current_soc,
@@ -166,6 +197,53 @@ class RouteEnergySimulator:
             heuristic_segment_count=heuristic_segment_count,
             model_version=sorted(model_versions)[0] if model_versions else None,
         )
+
+    @staticmethod
+    def _find_segment_speed_limit(
+        *,
+        seg_start: tuple,
+        seg_end: tuple,
+        seg_points: list,
+        spatial_index: Any,
+        speed_limit_segments: list,
+    ) -> Optional[float]:
+        """Slope segment'in baslangic ve bitis koordinatlarina denk gelen
+        geometry index'lerini bul; bu araliktaki speed_limit segmentlerinden
+        en yaygın (max) maxspeed_kmh'i dondur. Yoksa None."""
+        if not speed_limit_segments or not seg_points:
+            return None
+
+        # En yakin geometry index'leri bul.
+        # spatial_index.nearest cumulative_distance_km field'inde index degeri tutuluyor.
+        try:
+            start_point, _ = spatial_index.nearest(seg_start[0], seg_start[1])
+            end_point, _ = spatial_index.nearest(seg_end[0], seg_end[1])
+            start_idx = int(start_point.cumulative_distance_km)
+            end_idx = int(end_point.cumulative_distance_km)
+        except (ValueError, AttributeError):
+            return None
+
+        if start_idx > end_idx:
+            start_idx, end_idx = end_idx, start_idx
+
+        # Bu araligi orten speed_limit segmentlerini topla.
+        overlapping_limits = []
+        for sl_seg in speed_limit_segments:
+            sl_start = int(sl_seg.get("start_index", 0))
+            sl_end = int(sl_seg.get("end_index", 0))
+            maxspeed = sl_seg.get("maxspeed_kmh")
+            if maxspeed is None:
+                continue
+            # Kesisim var mi?
+            if sl_end < start_idx or sl_start > end_idx:
+                continue
+            overlapping_limits.append(float(maxspeed))
+
+        if not overlapping_limits:
+            return None
+        # Birden fazla cakisma varsa muhafazakar yaklasim: en dusuk limit
+        # (her zaman saygi gosterilmeli).
+        return min(overlapping_limits)
 
     def _simulate_segment(
         self,

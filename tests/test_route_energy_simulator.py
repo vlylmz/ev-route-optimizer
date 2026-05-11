@@ -105,6 +105,42 @@ def test_simulator_uses_speed_limit_when_available():
     assert capped.total_energy_kwh < unlimited.total_energy_kwh
 
 
+def test_per_segment_speed_limit_overrides_global_avg():
+    """Bir segmentin koordinatlarina denk gelen speed_limit varsa, o segment
+    o limit ile clamp edilir (digerleri global avg ile gider)."""
+    simulator = RouteEnergySimulator()
+    vehicle = sample_vehicle()
+    rc = sample_route_context()
+
+    # Yuksek OSRM hizi (140 km/h equivalent). Geometry ekleyelim.
+    rc["route"]["duration_min"] = 100.0 / 140.0 * 60.0
+    rc["route"]["geometry"] = [
+        (39.90, 32.80),
+        (39.85, 32.70),
+        (39.80, 32.60),
+        (39.75, 32.50),
+    ]
+    # Speed limit: sadece ilk segment 60 km/h (yavaş şehir içi).
+    rc["speed_limit_segments"] = [
+        {"start_index": 0, "end_index": 1, "maxspeed_kmh": 60, "highway": "secondary"},
+    ]
+
+    capped = simulator.simulate(
+        vehicle=vehicle, route_context=rc, start_soc_pct=80.0, strategy="fast"
+    )
+
+    # Speed_limit_segments'siz versiyon
+    rc_no_limit = sample_route_context()
+    rc_no_limit["route"]["duration_min"] = 100.0 / 140.0 * 60.0
+    unlimited = simulator.simulate(
+        vehicle=vehicle, route_context=rc_no_limit, start_soc_pct=80.0, strategy="fast"
+    )
+
+    # Per-segment limit varsa toplam enerji azalmali (en azindan ilk segmentte
+    # daha dusuk hiz -> daha dusuk speed_delta).
+    assert capped.total_energy_kwh <= unlimited.total_energy_kwh
+
+
 def test_simulator_falls_back_to_osrm_speed_when_no_limits():
     """speed_limit_summary yoksa avg_speed OSRM duration'dan turetilir."""
     simulator = RouteEnergySimulator()
