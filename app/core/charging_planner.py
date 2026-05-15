@@ -33,7 +33,8 @@ class ChargingPlanner:
     def __init__(
         self,
         *,
-        reserve_soc_default: float = 10.0,
+        reserve_soc_default: float = 20.0,
+        min_soc_floor_pct: float = 20.0,
         energy_buffer_factor: float = 1.05,
         min_stop_minutes: float = 10.0,
         max_stops: int = 8,
@@ -44,6 +45,9 @@ class ChargingPlanner:
         from app.services.charging_curve_service import ChargingCurveService
 
         self.reserve_soc_default = reserve_soc_default
+        # Hard floor: arac/kullanici daha dusuk reserve verse bile bu esik
+        # in-trip SOC icin asla altina inilemez (varsayilan %20).
+        self.min_soc_floor_pct = float(min_soc_floor_pct)
         self.energy_buffer_factor = energy_buffer_factor
         self.min_stop_minutes = min_stop_minutes
         self.max_stops = max_stops
@@ -85,6 +89,10 @@ class ChargingPlanner:
         avg_consumption_kwh_per_km = metrics["avg_consumption_kwh_per_km"]
         ml_summary = metrics["ml_summary"]
 
+        # SoC %20 floor kontrolu: baseline sim uzerinden segment-level guard.
+        # build_plan ne donerse donsun her return path'ine iliştirilir.
+        floor_check = self._validate_floor(simulation_result=simulation_result)
+
         if not needs_charging:
             return {
                 "status": "ok",
@@ -101,6 +109,7 @@ class ChargingPlanner:
                     "projected_arrival_soc_percent": round(final_soc_without_charge, 2),
                 },
                 "ml_summary": ml_summary,
+                "floor_check": floor_check,
                 "message": "Şarj gerekmiyor.",
             }
 
@@ -122,6 +131,7 @@ class ChargingPlanner:
                     "projected_arrival_soc_percent": None,
                 },
                 "ml_summary": ml_summary,
+                "floor_check": floor_check,
                 "message": "Uygun bir şarj planı oluşturulamadı.",
             }
 
@@ -224,6 +234,7 @@ class ChargingPlanner:
                 "projected_arrival_soc_percent": round(projected_arrival_soc_percent, 2),
             },
             "ml_summary": ml_summary,
+            "floor_check": floor_check,
             "message": self._build_message(
                 station_name=station_name,
                 feasible=feasible,
@@ -254,10 +265,13 @@ class ChargingPlanner:
         )
 
         if multi_stop_result is not None and multi_stop_result.get("feasible"):
+            multi_stop_result.setdefault("floor_check", floor_check)
             return multi_stop_result
 
         # Hem single hem multi infeasible: daha bilgili olani sec.
-        return self._select_better_plan(single_stop_result, multi_stop_result)
+        chosen = self._select_better_plan(single_stop_result, multi_stop_result)
+        chosen.setdefault("floor_check", floor_check)
+        return chosen
 
     # =====================================================================
     # build_plan helper'lari
@@ -333,6 +347,8 @@ class ChargingPlanner:
             ),
             self.reserve_soc_default,
         )
+        # Hard floor clamp: in-trip SOC asla min_soc_floor_pct altina inemez.
+        reserve_soc = max(reserve_soc, self.min_soc_floor_pct)
         target_arrival_soc = _safe_float(
             _pick(charge_need, "target_arrival_soc_pct", default=None),
             reserve_soc,
@@ -432,6 +448,10 @@ class ChargingPlanner:
         istasyonu sec, sonraki adimi ya bitise ya da bir sonraki istasyona
         yetecek SOC'ye kadar sarj et, tekrar dene.
         """
+        # Hard floor clamp: caller daha dusuk reserve verse bile asla
+        # min_soc_floor_pct altina inme.
+        reserve_soc = max(reserve_soc, self.min_soc_floor_pct)
+
         if usable_battery_kwh <= 0 or avg_consumption_kwh_per_km <= 0:
             return None
 
@@ -797,6 +817,9 @@ class ChargingPlanner:
         """
         from app.core.multi_stop_solver import MultiStopDijkstraSolver
 
+        # Hard floor clamp: in-trip SOC asla min_soc_floor_pct altina inemez.
+        reserve_soc = max(reserve_soc, self.min_soc_floor_pct)
+
         # Tum stratejiler aracin soc_max'ina kadar sarj izin verir; modlar
         # arasi fark cost minimization (drive_time + charge_time) uzerinden
         # ortaya cikar. Eskiden efficient/balanced 85-90 sinirli idi -> uzun
@@ -1094,6 +1117,47 @@ class ChargingPlanner:
             "ml_segment_count": ml_segment_count,
             "heuristic_segment_count": heuristic_segment_count,
             "model_version": model_version,
+        }
+
+    def _validate_floor(
+        self,
+        *,
+        simulation_result: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Segment-bazli SoC tara, hard floor altina dusen segment varsa flag.
+
+        Multi-stop chain'inde her bacak yeniden simule edilmedigi icin bu
+        kontrol "sarjsiz baseline" SOC profili uzerinde calisir — kullanici
+        son guvenlik kapisi olarak bilgilenmis olur, planner durak eklerken
+        zaten floor'a uyar (reserve_soc clamp).
+        """
+        segments = (
+            _pick(simulation_result, "segments", "segment_results", default=[]) or []
+        )
+        violations: List[Dict[str, Any]] = []
+        min_soc = 100.0
+
+        for seg in segments:
+            soc_after = _safe_float(
+                _pick(seg, "soc_after", "end_soc_pct", "end_soc", "remaining_soc"),
+                100.0,
+            )
+            if soc_after < min_soc:
+                min_soc = soc_after
+            if soc_after < self.min_soc_floor_pct:
+                violations.append({
+                    "segment_no": _pick(seg, "segment_no", default=None),
+                    "cumulative_distance_km": _safe_float(
+                        _pick(seg, "cumulative_distance_km"), 0.0
+                    ),
+                    "soc_after_percent": round(soc_after, 2),
+                })
+
+        return {
+            "ok": not violations,
+            "floor_pct": self.min_soc_floor_pct,
+            "min_observed_soc_pct": round(min_soc, 2) if segments else None,
+            "violations": violations,
         }
 
     def _extract_final_soc(self, simulation_result: Dict[str, Any]) -> float:

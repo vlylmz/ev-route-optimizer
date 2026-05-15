@@ -56,6 +56,11 @@ interface Props {
   initialSocPct?: number
   finalSocPct?: number
   usableBatteryKwh?: number
+  // Canli konum (nav-mode bagimsiz). useLiveLocation hook'u doldurur.
+  liveLocation?: { lat: number; lon: number; heading: number } | null
+  liveLocationVisible?: boolean
+  // Disaridan ref baglanarak haritanin canvas'i export icin yakalanir.
+  mapRef?: React.RefObject<MapRef | null>
 }
 
 const MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty'
@@ -74,8 +79,12 @@ export function MapView({
   initialSocPct,
   finalSocPct,
   usableBatteryKwh,
+  liveLocation,
+  liveLocationVisible = false,
+  mapRef: externalMapRef,
 }: Props) {
-  const mapRef = useRef<MapRef | null>(null)
+  const internalMapRef = useRef<MapRef | null>(null)
+  const mapRef = externalMapRef ?? internalMapRef
   const [pos, setPos] = useState<{ lat: number; lon: number } | null>(null)
   const [heading, setHeading] = useState<number>(0)
   const [followMode, setFollowMode] = useState<boolean>(true)
@@ -827,6 +836,10 @@ export function MapView({
         style={{ width: '100%', height: '100%' }}
         onLoad={handleMapLoad}
         onDragStart={() => navigationMode && setFollowMode(false)}
+        // react-map-gl props arasinda 'preserveDrawingBuffer' tiplenmemis ama
+        // alttaki MapLibre constructor'ina geciyor; canvas.toDataURL bos
+        // dondurmesin diye gerekli (PDF/PNG export icin).
+        {...({ preserveDrawingBuffer: true } as Record<string, unknown>)}
       >
         {!navigationMode && (
           <NavigationControl position="top-right" visualizePitch />
@@ -1013,6 +1026,21 @@ export function MapView({
                 />
                 <polygon points="18,6 24,20 18,16 12,20" fill="white" />
               </svg>
+            </div>
+          </Marker>
+        )}
+
+        {/* Canli konum marker'i — nav-mode kapaliyken her sayfada gozukur.
+            Nav-mode aciksa zaten yukaridaki `pos` marker'i ayni isi yapiyor. */}
+        {liveLocationVisible && liveLocation && !navigationMode && (
+          <Marker
+            longitude={liveLocation.lon}
+            latitude={liveLocation.lat}
+            anchor="center"
+          >
+            <div className="relative flex items-center justify-center">
+              <span className="absolute h-9 w-9 animate-ping rounded-full bg-blue-500/30" />
+              <span className="relative flex h-4 w-4 items-center justify-center rounded-full bg-blue-500 ring-2 ring-white shadow-md" />
             </div>
           </Marker>
         )}

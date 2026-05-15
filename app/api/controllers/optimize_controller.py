@@ -245,6 +245,10 @@ def optimize_route(
             _planner.min_stop_minutes = float(req.min_stop_minutes)
         except AttributeError:
             pass  # Test fixture'larda planner yok / değiştirilemez olabilir
+        try:
+            _planner.min_soc_floor_pct = float(req.min_soc_floor_pct)
+        except AttributeError:
+            pass
         if req.max_stops is not None:
             try:
                 _planner.max_stops = int(req.max_stops)

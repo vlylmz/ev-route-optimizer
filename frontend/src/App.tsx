@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { MapRef } from 'react-map-gl/maplibre'
 import {
   BarChart3,
   ChevronDown,
   Compass,
+  FileDown,
   Gauge,
   History,
+  Image as ImageIcon,
   MapPin,
   Mountain,
   Sparkles,
@@ -23,6 +26,9 @@ import { useOptimize } from './hooks/useOptimize'
 import { useRoute } from './hooks/useRoute'
 import { useSpeedLimits } from './hooks/useSpeedLimits'
 import { useRouteHistory } from './hooks/useRouteHistory'
+import { useLiveLocation } from './hooks/useLiveLocation'
+import { useDynamicRerouting } from './hooks/useDynamicRerouting'
+import { useRouteExport } from './hooks/useRouteExport'
 import type {
   GeocodeResultItem,
   OptimizeRequest,
@@ -46,6 +52,13 @@ function App() {
   } | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [navMode, setNavMode] = useState(false)
+  const [liveLocationOn, setLiveLocationOn] = useState(false)
+  const [dynamicReroutingOn, setDynamicReroutingOn] = useState(false)
+  const { pos: livePos, error: liveErr } = useLiveLocation({
+    enabled: liveLocationOn,
+  })
+  const mapRef = useRef<MapRef | null>(null)
+  const { exportPng, exportPdf } = useRouteExport()
   const [activeProfileKey, setActiveProfileKey] = useState<string | null>(null)
   const [pendingPreset, setPendingPreset] = useState<{
     start: GeocodeResultItem
@@ -190,6 +203,21 @@ function App() {
     return profile?.final_soc_pct ?? optimizeM.data.final_soc_pct ?? null
   }, [optimizeM.data, activeProfileKey])
 
+  // Dinamik yeniden rotalama — her 30 km'de bir mevcut rotayi arka planda
+  // yeniden hesaplar. liveLocationOn ile birlikte aktif olur.
+  useDynamicRerouting({
+    enabled: dynamicReroutingOn && liveLocationOn,
+    livePos,
+    baseRequest: submitted,
+    currentSocPct: activeProfileFinalSoc,
+    triggerEveryKm: 30,
+    onReroute: (newReq) => {
+      setSubmitted(newReq)
+      optimizeM.mutate(newReq)
+      routeM.mutate({ start: newReq.start, end: newReq.end })
+    },
+  })
+
   const handleStartNav = () => {
     if (geometry.length < 2) return
     setNavMode(true)
@@ -243,6 +271,9 @@ function App() {
         initialSocPct={optimizeM.data?.initial_soc_pct}
         finalSocPct={activeProfileFinalSoc ?? undefined}
         usableBatteryKwh={activeVehicle?.usable_battery_kwh}
+        liveLocation={livePos}
+        liveLocationVisible={liveLocationOn}
+        mapRef={mapRef}
       />
 
       {/* Sidebar Aç butonu */}
@@ -365,6 +396,65 @@ function App() {
               </button>
             )}
 
+            {optimizeM.data && activeProfileKey && geometry.length >= 2 && (
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => {
+                    const profile = optimizeM.data!.profiles.find(
+                      (p) => p.key === activeProfileKey,
+                    )
+                    if (!profile) return
+                    exportPng({
+                      mapRef,
+                      stops: profile.recommended_stops,
+                      meta: {
+                        vehicleName: optimizeM.data!.vehicle_name,
+                        startLabel:
+                          submittedNames?.start.display_name ?? 'Başlangıç',
+                        endLabel: submittedNames?.end.display_name ?? 'Bitiş',
+                        distanceKm: optimizeM.data!.total_distance_km,
+                        durationMin: profile.total_trip_minutes ?? 0,
+                        initialSocPct: optimizeM.data!.initial_soc_pct,
+                        finalSocPct: profile.final_soc_pct,
+                        strategyLabel: profile.label,
+                      },
+                    })
+                  }}
+                  className="flex items-center justify-center gap-1.5 rounded-xl border border-slate-300 bg-white/70 px-3 py-2.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-white hover:shadow"
+                >
+                  <ImageIcon size={14} />
+                  PNG indir
+                </button>
+                <button
+                  onClick={() => {
+                    const profile = optimizeM.data!.profiles.find(
+                      (p) => p.key === activeProfileKey,
+                    )
+                    if (!profile) return
+                    exportPdf({
+                      mapRef,
+                      stops: profile.recommended_stops,
+                      meta: {
+                        vehicleName: optimizeM.data!.vehicle_name,
+                        startLabel:
+                          submittedNames?.start.display_name ?? 'Başlangıç',
+                        endLabel: submittedNames?.end.display_name ?? 'Bitiş',
+                        distanceKm: optimizeM.data!.total_distance_km,
+                        durationMin: profile.total_trip_minutes ?? 0,
+                        initialSocPct: optimizeM.data!.initial_soc_pct,
+                        finalSocPct: profile.final_soc_pct,
+                        strategyLabel: profile.label,
+                      },
+                    })
+                  }}
+                  className="flex items-center justify-center gap-1.5 rounded-xl border border-slate-300 bg-white/70 px-3 py-2.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-white hover:shadow"
+                >
+                  <FileDown size={14} />
+                  PDF indir
+                </button>
+              </div>
+            )}
+
             {geometry.length >= 2 && (
               <div className="flex items-center justify-between rounded-xl border border-slate-200/70 bg-white/60 px-3 py-2 text-xs text-slate-600 backdrop-blur">
                 <span className="flex items-center gap-2 text-slate-500">
@@ -382,6 +472,82 @@ function App() {
                 )}
               </div>
             )}
+
+            <div className="rounded-xl border border-slate-200/70 bg-white/60 px-3 py-2 text-xs text-slate-600 backdrop-blur">
+              <label className="flex cursor-pointer items-center justify-between gap-2">
+                <span className="flex items-center gap-2">
+                  <span
+                    className={`inline-block h-2 w-2 rounded-full ${
+                      liveLocationOn && livePos
+                        ? 'animate-pulse bg-blue-500'
+                        : 'bg-slate-300'
+                    }`}
+                  />
+                  <span className="font-medium">Canlı konum</span>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={liveLocationOn}
+                  onChange={(e) => setLiveLocationOn(e.target.checked)}
+                  className="h-3.5 w-3.5 accent-blue-600"
+                />
+              </label>
+              {liveLocationOn && livePos && (
+                <div className="mt-1.5 flex items-center justify-between text-[10px] text-slate-500">
+                  <span className="tabular-nums">
+                    {livePos.lat.toFixed(5)}, {livePos.lon.toFixed(5)}
+                  </span>
+                  <span className="tabular-nums">
+                    ±{livePos.accuracyM.toFixed(0)} m
+                  </span>
+                </div>
+              )}
+              {liveLocationOn && liveErr && (
+                <div className="mt-1.5 text-[10px] text-red-600">
+                  {liveErr}
+                </div>
+              )}
+            </div>
+
+            <div
+              className={`rounded-xl border px-3 py-2 text-xs backdrop-blur ${
+                liveLocationOn
+                  ? 'border-slate-200/70 bg-white/60 text-slate-600'
+                  : 'border-slate-200/50 bg-white/40 text-slate-400'
+              }`}
+            >
+              <label
+                className={`flex items-center justify-between gap-2 ${
+                  liveLocationOn ? 'cursor-pointer' : 'cursor-not-allowed'
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <span
+                    className={`inline-block h-2 w-2 rounded-full ${
+                      dynamicReroutingOn && liveLocationOn
+                        ? 'animate-pulse bg-violet-500'
+                        : 'bg-slate-300'
+                    }`}
+                  />
+                  <span className="font-medium">Dinamik rotalama</span>
+                  <span className="text-[10px] text-slate-400">
+                    (her 30 km)
+                  </span>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={dynamicReroutingOn}
+                  disabled={!liveLocationOn}
+                  onChange={(e) => setDynamicReroutingOn(e.target.checked)}
+                  className="h-3.5 w-3.5 accent-violet-600 disabled:opacity-40"
+                />
+              </label>
+              {!liveLocationOn && (
+                <div className="mt-1 text-[10px] text-slate-400">
+                  Canlı konum gerekli
+                </div>
+              )}
+            </div>
 
             {reservationCount > 0 && (
               <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50/80 px-3 py-2 text-xs text-emerald-800 backdrop-blur">

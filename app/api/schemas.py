@@ -250,6 +250,15 @@ class OptimizeRequest(BaseModel):
             "planner default'u (1.05) kullanilir. Ileri kullanicilar icin."
         ),
     )
+    min_soc_floor_pct: float = Field(
+        20.0,
+        ge=0.0,
+        le=80.0,
+        description=(
+            "Yolculuk boyunca SoC'nin asla altina inemeyecegi hard floor (%). "
+            "Planner reserve_soc bu degerin altina dusemez; varsayilan %20."
+        ),
+    )
     strategies: List[StrategyName] = Field(
         default_factory=lambda: ["fast", "efficient", "balanced"]
     )
