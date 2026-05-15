@@ -52,6 +52,7 @@ class RouteProfiles:
         analyzer: Optional[Any] = None,
         vehicle_obj: Any = None,
         initial_soc: Optional[float] = None,
+        use_ml: Optional[bool] = None,
     ) -> Dict[str, Any]:
         """
         simulator + vehicle_obj + initial_soc verildiyse her strateji icin
@@ -77,6 +78,7 @@ class RouteProfiles:
                     initial_soc=initial_soc,
                     strategy=strategy,
                     fallback_charge_need=charge_need,
+                    use_ml=use_ml,
                 )
                 if strategy_sim_dict is not None:
                     sim_for_strategy = strategy_sim_dict
@@ -171,6 +173,7 @@ class RouteProfiles:
         initial_soc: float,
         strategy: str,
         fallback_charge_need: Dict[str, Any],
+        use_ml: Optional[bool] = None,
     ) -> tuple:
         """Strateji bazli yeniden simulate + analyze. Hata olursa fallback.
 
@@ -184,6 +187,7 @@ class RouteProfiles:
                 route_context=route_context,
                 start_soc_pct=initial_soc,
                 strategy=strategy,
+                use_ml=use_ml,
             )
         except Exception:
             return None, None
@@ -194,7 +198,10 @@ class RouteProfiles:
         if analyzer is not None:
             try:
                 usable_battery_kwh = float(getattr(vehicle_obj, "usable_battery_kwh", 0.0))
-                reserve_soc_pct = float(getattr(vehicle_obj, "soc_min_pct", 10.0))
+                reserve_soc_pct = max(
+                    float(getattr(vehicle_obj, "soc_min_pct", 10.0)),
+                    float(getattr(self.charging_planner, "min_soc_floor_pct", 0.0)),
+                )
                 charge_need_obj = analyzer.analyze(
                     simulation=sim_obj,
                     usable_battery_kwh=usable_battery_kwh,

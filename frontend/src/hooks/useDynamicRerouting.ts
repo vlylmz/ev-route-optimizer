@@ -57,18 +57,33 @@ export function useDynamicRerouting({
 }: DynamicReroutingOptions) {
   const anchorRef = useRef<{ lat: number; lon: number } | null>(null)
   const inFlightRef = useRef(false)
+  const cooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Hook kapatildiginda / pozisyon ilk geldiğinde anchor'u resetle
   useEffect(() => {
     if (!enabled) {
       anchorRef.current = null
       inFlightRef.current = false
+      if (cooldownTimerRef.current) {
+        clearTimeout(cooldownTimerRef.current)
+        cooldownTimerRef.current = null
+      }
       return
     }
     if (livePos && !anchorRef.current) {
       anchorRef.current = { lat: livePos.lat, lon: livePos.lon }
     }
   }, [enabled, livePos])
+
+  // Unmount'ta bekleyen cooldown timer'i temizle.
+  useEffect(() => {
+    return () => {
+      if (cooldownTimerRef.current) {
+        clearTimeout(cooldownTimerRef.current)
+        cooldownTimerRef.current = null
+      }
+    }
+  }, [])
 
   // Konum güncellendikçe eşik kontrolü
   useEffect(() => {
@@ -99,10 +114,11 @@ export function useDynamicRerouting({
     onReroute(newReq)
     anchorRef.current = { lat: livePos.lat, lon: livePos.lon }
 
-    const t = setTimeout(() => {
+    if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current)
+    cooldownTimerRef.current = setTimeout(() => {
       inFlightRef.current = false
+      cooldownTimerRef.current = null
     }, cooldownMs)
-    return () => clearTimeout(t)
   }, [
     enabled,
     livePos,

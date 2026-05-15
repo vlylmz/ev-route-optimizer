@@ -231,6 +231,7 @@ class FakeProfiles:
         analyzer=None,
         vehicle_obj=None,
         initial_soc=None,
+        use_ml=None,
     ):
         strategy_list = list(strategies or ["fast", "efficient", "balanced"])
         profiles = {}

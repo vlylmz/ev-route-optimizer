@@ -98,7 +98,10 @@ class ChargingPlanner:
                 "status": "ok",
                 "strategy": strategy,
                 "needs_charging": False,
-                "feasible": final_soc_without_charge >= 0,
+                "feasible": (
+                    floor_check["ok"]
+                    and final_soc_without_charge >= self.min_soc_floor_pct
+                ),
                 "recommended_stops": [],
                 "summary": {
                     "stop_count": 0,

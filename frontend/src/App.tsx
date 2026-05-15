@@ -180,6 +180,14 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [submitted, simPos],
   )
+  useEffect(() => {
+    return () => {
+      if (speedRerouteTimerRef.current != null) {
+        window.clearTimeout(speedRerouteTimerRef.current)
+        speedRerouteTimerRef.current = null
+      }
+    }
+  }, [])
   const [activeProfileKey, setActiveProfileKey] = useState<string | null>(null)
   const [pendingPreset, setPendingPreset] = useState<{
     start: GeocodeResultItem

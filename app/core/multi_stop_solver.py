@@ -91,7 +91,7 @@ class MultiStopDijkstraSolver:
             return min(100.0, max(0.0, bucket * self.soc_bucket_pct))
 
         def pct_to_bucket(pct: float) -> int:
-            return max(0, min(10, int(round(pct / self.soc_bucket_pct))))
+            return max(0, min(10, int(pct / self.soc_bucket_pct)))
 
         def default_edge_cost(edge_metrics: Dict[str, Any]) -> float:
             return float(edge_metrics["drive_minutes"]) + float(edge_metrics["charge_minutes"])
@@ -157,12 +157,10 @@ class MultiStopDijkstraSolver:
                 candidates.append((end_idx, end_leg_km))
 
             for j, leg_km in candidates:
-                # j'ye varisindaki SOC:
-                consumed_pct = (leg_km * avg_consumption_kwh_per_km / usable_battery_kwh) * 100.0
-                soc_at_j_pct = current_soc_pct - consumed_pct
-
                 if j == end_idx:
-                    # End: charge yok. Drive only.
+                    # End: detour yok. Drive only.
+                    consumed_pct = (leg_km * avg_consumption_kwh_per_km / usable_battery_kwh) * 100.0
+                    soc_at_j_pct = current_soc_pct - consumed_pct
                     drive_min = (leg_km / self.avg_speed_kmh) * 60.0
                     arrival_bucket = pct_to_bucket(soc_at_j_pct)
                     end_node = _Node(station_idx=end_idx, soc_bucket=arrival_bucket)
@@ -171,19 +169,24 @@ class MultiStopDijkstraSolver:
                         "charge_minutes": 0.0,
                         "leg_km": leg_km,
                     })
-                    new_cost = cost_fn_total = cost + edge_cost
+                    new_cost = cost + edge_cost
                     new_path = path + [(end_idx, bucket_to_pct(arrival_bucket), 0.0, drive_min)]
                     heapq.heappush(heap, (new_cost, counter, end_node, new_path))
                     counter += 1
                     continue
 
+                station = ordered[j]
+                station_power_kw = float(station.get("power_kw", 50.0))
+                detour_km = float(station.get("detour_distance_km", 0.0))
+                consumed_pct = (
+                    (leg_km + detour_km) * avg_consumption_kwh_per_km / usable_battery_kwh
+                ) * 100.0
+                soc_at_j_pct = current_soc_pct - consumed_pct
+
                 # Istasyona vardik; rezerv + 1pp buffer (reach hesabiyla tutarli).
                 if soc_at_j_pct < reserve_soc_pct + reach_safety_buffer_pct:
                     continue
 
-                station = ordered[j]
-                station_power_kw = float(station.get("power_kw", 50.0))
-                detour_km = float(station.get("detour_distance_km", 0.0))
                 detour_min = (detour_km / self.detour_speed_kmh) * 60.0 if self.detour_speed_kmh > 0 else 0.0
                 drive_min = (leg_km / self.avg_speed_kmh) * 60.0
 

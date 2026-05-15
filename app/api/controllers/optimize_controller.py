@@ -213,7 +213,7 @@ def optimize_route(
             detail=f"Simulation failed: {exc}",
         ) from exc
 
-    reserve_soc_pct = float(vehicle.soc_min_pct)
+    reserve_soc_pct = max(float(vehicle.soc_min_pct), float(req.min_soc_floor_pct))
 
     # 3) Şarj ihtiyacı analizi
     try:
@@ -272,6 +272,7 @@ def optimize_route(
             analyzer=analyzer,
             vehicle_obj=vehicle,
             initial_soc=req.initial_soc_pct,
+            use_ml=req.use_ml,
         )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(

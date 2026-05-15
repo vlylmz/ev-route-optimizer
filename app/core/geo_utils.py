@@ -105,7 +105,13 @@ class RouteSpatialIndex:
             from scipy.spatial import cKDTree
             import numpy as np
 
-            coords = np.array([(p.lat, p.lon) for p in route_points], dtype=float)
+            lats = np.radians([p.lat for p in route_points])
+            lons = np.radians([p.lon for p in route_points])
+            coords = np.column_stack([
+                np.cos(lats) * np.cos(lons),
+                np.cos(lats) * np.sin(lons),
+                np.sin(lats),
+            ])
             self._tree = cKDTree(coords)
         except ImportError:
             self._tree = None
@@ -116,9 +122,14 @@ class RouteSpatialIndex:
             raise ValueError("Index bos.")
 
         if self._tree is not None:
-            # KDTree euclidean degree fark uzerinden -> sadece *index*'i alirken
-            # kullaniyoruz; gercek mesafeyi haversine ile hesapliyoruz.
-            _, idx = self._tree.query([lat, lon], k=1)
+            lat_r = radians(lat)
+            lon_r = radians(lon)
+            query = [
+                cos(lat_r) * cos(lon_r),
+                cos(lat_r) * sin(lon_r),
+                sin(lat_r),
+            ]
+            _, idx = self._tree.query(query, k=1)
             nearest_point = self.route_points[int(idx)]
         else:
             nearest_point = min(
