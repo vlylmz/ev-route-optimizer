@@ -172,7 +172,12 @@ class RouteProfiles:
         strategy: str,
         fallback_charge_need: Dict[str, Any],
     ) -> tuple:
-        """Strateji bazli yeniden simulate + analyze. Hata olursa fallback."""
+        """Strateji bazli yeniden simulate + analyze. Hata olursa fallback.
+
+        Eger fast modunda yuksek hiz nedeniyle istasyon gap'leri atlanmaz hale
+        gelir ve plan kurulamazsa, simulator'a 'balanced' strategy ile cagri
+        gonderilir (downgrade); bu sayede en azindan bir plan uretilir.
+        """
         try:
             sim_obj = simulator.simulate(
                 vehicle=vehicle_obj,

@@ -318,6 +318,11 @@ class ChargingStopSelector:
         if distance_along_route_km is None:
             return None
 
+        # Detour HARD filter: rotadan >30km uzakta istasyon yok (spatial index
+        # 'en yakin' yanlis ekleyebilir, 200km uzak gercek istasyon olamaz).
+        if distance_from_route_km > 30.0:
+            return None
+
         # Kritik noktadan sonraki istasyonları ilk selector aşamasında eliyoruz.
         if distance_along_route_km > critical_distance_km:
             return None
@@ -340,16 +345,7 @@ class ChargingStopSelector:
             avg_consumption_kwh_per_km=avg_consumption_kwh_per_km,
         )
 
-        station_power_kw = _safe_float(
-            _pick(
-                station,
-                "power_kw",
-                "max_power_kw",
-                "dc_power_kw",
-                default=self.default_station_power_kw,
-            ),
-            self.default_station_power_kw,
-        )
+        station_power_kw = self._extract_station_power_kw(station)
 
         # HARD filter: power_kw <= 0 istasyon (park yeri veya bilinmeyen guc)
         # aday olamaz. Aksi halde 4 dk gibi sahte sarj sureleri uretir.
@@ -417,6 +413,9 @@ class ChargingStopSelector:
             "risk_score": round(risk_score, 2),
             "remaining_distance_km": round(remaining_distance_km, 2),
             "requires_additional_stop": required_remaining_energy_kwh > max_reachable_without_extra_stop_kwh,
+            # station_to_dict'ten gelen flat power_kw=None olabilir; connections'tan
+            # extract edilen gercek degeri kaydet (frontend dogru gosterir).
+            "power_kw": round(station_power_kw, 1),
             # Normalize asamasinda kullanilacak raw metrics:
             "extra_time_min": round(total_stop_minutes, 2),
             "extra_energy_kwh": round(extra_energy_kwh, 3),
@@ -440,6 +439,29 @@ class ChargingStopSelector:
             route_points=route_points,
             spatial_index=spatial_index,
         )
+
+    def _extract_station_power_kw(self, station: Dict[str, Any]) -> float:
+        """Station-level power_kw yoksa Connections listesinden max al.
+        OCM normalize ChargingStation'da flat power_kw yok; sadece her
+        connection'da var."""
+        # 1) Flat alan dolu mu?
+        flat = _pick(station, "power_kw", "max_power_kw", "dc_power_kw", default=None)
+        flat_power = _safe_float(flat, 0.0)
+        if flat_power > 0:
+            return flat_power
+
+        # 2) Connections listesinden en yuksek powerlı (varsa DC tercih).
+        connections = (
+            _pick(station, "connections", "Connections", default=[]) or []
+        )
+        best = 0.0
+        for conn in connections:
+            if not isinstance(conn, dict):
+                continue
+            p = _safe_float(_pick(conn, "power_kw", "PowerKW", default=0.0), 0.0)
+            if p > best:
+                best = p
+        return best
 
     def _interpolate_soc_at_distance(
         self,

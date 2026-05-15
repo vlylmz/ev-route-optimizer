@@ -61,6 +61,10 @@ def _vehicle_to_dict(vehicle: Vehicle) -> Dict[str, Any]:
         "max_dc_charge_kw": vehicle.max_dc_charge_kw,
         "max_dc_charge_power_kw": vehicle.max_dc_charge_kw,
         "temp_penalty_factor": vehicle.temp_penalty_factor,
+        "soc_min_pct": vehicle.soc_min_pct,
+        "soc_max_pct": vehicle.soc_max_pct,
+        "charge_curve_hint": vehicle.charge_curve_hint,
+        "battery_chemistry": vehicle.battery_chemistry,
         "dc_connectors": list(vehicle.dc_connectors),
         "ac_connectors": list(vehicle.ac_connectors),
     }

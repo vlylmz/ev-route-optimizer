@@ -46,7 +46,7 @@ for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":8000" ^| findstr "LISTENING
 
 REM Backend baslat
 echo [2/3] Backend baslatiliyor (FastAPI, port 8000)...
-start "EV Backend - FastAPI" cmd /k "cd /d "%PROJECT_DIR%" && set PYTHONIOENCODING=utf-8 && .venv\Scripts\activate && echo. && echo === Backend: http://127.0.0.1:8000 === && echo. && uvicorn app.api.main:app --host 127.0.0.1 --port 8000"
+start "EV Backend - FastAPI" cmd /k "cd /d "%PROJECT_DIR%" && set PYTHONIOENCODING=utf-8 && .venv\Scripts\activate && echo. && echo === Backend: http://127.0.0.1:8000 === && echo. && uvicorn app.api.main:app --host 127.0.0.1 --port 8000 --reload --reload-dir app"
 
 REM Backend warmup
 timeout /t 5 /nobreak >nul

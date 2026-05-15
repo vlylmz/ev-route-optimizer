@@ -57,11 +57,14 @@ class RouteEnergySimulator:
         self.use_ml_default = use_ml_default
 
     # Strateji bazli surus profili: fast = agresif, efficient = ekonomik.
-    # Hizla speed_delta etkisi nedeniyle enerji tuketimi modlar arasi farkliisiyor.
+    # Hizla speed_delta etkisi (kabaca kupik) nedeniyle %10 hiz +%14 enerji
+    # demek; bu istasyon gap'lerini atlayamamaya yol acabiliyor. Bu yuzden
+    # fast=1.05 olarak sinirli (+%7 enerji), yine fast modunda gozle gorulur
+    # avantaj saglar.
     _STRATEGY_SPEED_FACTOR = {
-        "fast": 1.10,
+        "fast": 1.05,
         "balanced": 1.00,
-        "efficient": 0.92,
+        "efficient": 0.94,
     }
 
     def simulate(
@@ -99,8 +102,16 @@ class RouteEnergySimulator:
             else 50.0
         )
         speed_factor = self._STRATEGY_SPEED_FACTOR.get(strategy, 1.00)
+        # ENERGY speed (segment enerji hesabi icin): %50'lik partial factor.
+        # %100 factor istasyon gap'lerini atlayamamaya yol acabiliyor;
+        # %50 factor enerji farkini koruyup pratik plan'a olanak verir.
+        energy_speed_factor = 1.0 + (speed_factor - 1.0) * 0.5
+        # DRIVE speed (toplam surus suresi icin): tam factor uygulanir.
+        drive_speed_factor = speed_factor
+
         # Otoyolda 130km/h legal limit; nadir gerekli ise 140'a izin ver.
-        avg_speed_kmh = max(20.0, min(140.0, base_avg_speed_kmh * speed_factor))
+        avg_speed_kmh = max(20.0, min(140.0, base_avg_speed_kmh * energy_speed_factor))
+        drive_speed_kmh = max(20.0, min(140.0, base_avg_speed_kmh * drive_speed_factor))
 
         traffic_factor = {"fast": 1.00, "balanced": 0.95, "efficient": 0.85}.get(strategy, 0.95)
 
@@ -110,6 +121,7 @@ class RouteEnergySimulator:
         if max_observed_limit:
             speed_cap = float(max_observed_limit) * traffic_factor
             avg_speed_kmh = min(avg_speed_kmh, speed_cap)
+            drive_speed_kmh = min(drive_speed_kmh, speed_cap)
 
         # Per-segment speed limit lookup hazirligi.
         speed_limit_segments = route_context.get("speed_limit_segments") or []
@@ -168,9 +180,10 @@ class RouteEnergySimulator:
 
             total_distance_km += segment_result.distance_km
             total_energy_kwh += segment_result.energy_used_kwh
-            # Segment suresi = mesafe / hiz (strateji bazli speed yansir).
-            if segment_speed_kmh > 0:
-                total_drive_minutes += (segment_result.distance_km / segment_speed_kmh) * 60.0
+            # Segment suresi = mesafe / drive_speed (tam strategy factor yansir;
+            # enerji ise partial factor ile hesaplandi).
+            if drive_speed_kmh > 0:
+                total_drive_minutes += (segment_result.distance_km / drive_speed_kmh) * 60.0
             current_soc = segment_result.end_soc_pct
 
             if segment_result.used_ml:

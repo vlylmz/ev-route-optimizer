@@ -797,16 +797,17 @@ class ChargingPlanner:
         """
         from app.core.multi_stop_solver import MultiStopDijkstraSolver
 
-        # strateji bazli max_target_soc + arrival_floor secimleri planner'in
-        # mevcut mantigini takip eder.
+        # Tum stratejiler aracin soc_max'ina kadar sarj izin verir; modlar
+        # arasi fark cost minimization (drive_time + charge_time) uzerinden
+        # ortaya cikar. Eskiden efficient/balanced 85-90 sinirli idi -> uzun
+        # istasyon gap'leri atlanamayinca infeasible doneblock.
+        vehicle_soc_max = _safe_float(_pick(vehicle, "soc_max_pct"), 100.0)
+        max_target_soc = vehicle_soc_max
         if strategy == "fast":
-            max_target_soc = 85.0
             arrival_bonus = 0.0
         elif strategy == "efficient":
-            max_target_soc = 75.0
             arrival_bonus = 0.0
         else:
-            max_target_soc = 80.0
             arrival_bonus = 10.0
 
         effective_arrival_floor = max(
@@ -951,6 +952,7 @@ class ChargingPlanner:
         enriched: List[Dict[str, Any]] = []
         for station in raw_stations:
             # HARD filter: operational + connector match (station_enricher).
+            # Once operational + connector filter (offset bilgisi gerekmez).
             if not passes_hard_filters(
                 station=station,
                 vehicle_connectors=vehicle_connectors,
@@ -967,6 +969,11 @@ class ChargingPlanner:
 
             distance_along = _safe_float(distance_along, 0.0)
             offset = _safe_float(offset, 0.0)
+
+            # Detour HARD filter: rotadan absurt uzakta istasyon (spatial index
+            # 'en yakin' sonucu olarak ekleyebilir).
+            if offset > 30.0:
+                continue
 
             power_kw = self._station_power_kw(station)
             if power_kw <= 0:
@@ -1018,7 +1025,9 @@ class ChargingPlanner:
         return _safe_float(lat, None), _safe_float(lon, None)
 
     def _station_power_kw(self, station: Dict[str, Any]) -> float:
-        """Flat 'power_kw' yoksa Connections'dan en yukseki alir."""
+        """Flat 'power_kw' yoksa Connections'dan en yukseki alir.
+        DC bagligi tercih: highway sarjlama icin AC (<= 22 kW) yetersiz, fakat
+        DC degeri yoksa AC degeri kullanilir (en azindan gostergecik)."""
         power = _safe_float(
             _pick(station, "power_kw", "max_power_kw", "dc_power_kw", default=None),
             0.0,

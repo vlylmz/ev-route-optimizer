@@ -147,6 +147,39 @@ def test_operational_false_station_is_filtered_out():
     assert result["candidates"] == []
 
 
+def test_station_power_kw_extracted_from_connections_when_flat_missing():
+    """OCM normalize ChargingStation'da flat power_kw yok; connections'tan
+    max alinmali (Nokta Oto bug'i)."""
+    selector = ChargingStopSelector()
+    vehicle, route_context, simulation_result, charge_need = build_common_data()
+
+    # Flat power_kw = None ama connection'da 120 kW (OCM gercek davranisi)
+    route_context["stations"] = [
+        {
+            "name": "OCM Station",
+            "distance_along_route_km": 150,
+            "distance_from_route_km": 0.5,
+            "power_kw": None,  # OCM normalize boyle dondurur
+            "is_operational": True,
+            "connections": [
+                {"connection_type": "CCS (Type 2)", "power_kw": 120.0},
+            ],
+        },
+    ]
+
+    result = selector.select_stop(
+        vehicle=vehicle,
+        route_context=route_context,
+        simulation_result=simulation_result,
+        charge_need=charge_need,
+        strategy="balanced",
+    )
+
+    assert result["selected_station"] is not None
+    # Power 120 kW olarak okunmali (default=50'ye dusmemeli).
+    assert result["selected_station"]["power_kw"] >= 100
+
+
 def test_zero_power_station_excluded_from_candidates():
     """power_kw=0 olan park yeri / bilinmeyen guc istasyonu aday olamaz."""
     selector = ChargingStopSelector()

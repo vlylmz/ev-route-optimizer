@@ -65,8 +65,14 @@ def passes_hard_filters(
     *,
     station: Dict[str, Any],
     vehicle_connectors: Optional[set] = None,
+    max_detour_km: float = 30.0,
 ) -> bool:
-    """Operational + connector HARD filter. False ise istasyon elenmeli."""
+    """Operational + connector + detour HARD filter. False ise istasyon elenmeli.
+
+    max_detour_km: rotadan >X km uzaktaki istasyon ekleme zahmetine girilmez.
+    Default 30km (her yon = 60km extra surus). 200+ km uzaktaki istasyonlar
+    spatial index'in 'en yakin nokta' sonucu olarak listeye sizabilir.
+    """
     operational = bool(pick(station, "is_operational", "available", default=True))
     if not operational:
         return False
@@ -76,5 +82,14 @@ def passes_hard_filters(
         # Station connector verisi yoksa filtreleme (eski cache'lenmis kayit).
         if station_connectors and not vehicle_connectors.intersection(station_connectors):
             return False
+
+    # Detour HARD filter: rotadan absurt uzakta istasyon listeye giremez.
+    offset_km = pick(station, "distance_from_route_km", "offset_km", default=None)
+    if offset_km is not None:
+        try:
+            if float(offset_km) > max_detour_km:
+                return False
+        except (TypeError, ValueError):
+            pass
 
     return True

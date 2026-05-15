@@ -76,9 +76,12 @@ class MultiStopDijkstraSolver:
         end_distance = route_distance_km
         end_idx = len(ordered)
 
-        # Reachable mesafe: belirli SOC ile ne kadar km gidilebilir (reserve uzerinde).
+        # Reachable mesafe: belirli SOC ile ne kadar km gidilebilir.
+        # Buffer=0: reserve'e kadar git. Reserve zaten guvenlik marji icerir.
+        # Buffer ekledigimizde uzun rotalarda istasyon gap'leri atlanabiliyor.
+        reach_safety_buffer_pct = 0.0
         def reachable_km(from_soc_pct: float) -> float:
-            usable_pct = max(0.0, from_soc_pct - reserve_soc_pct)
+            usable_pct = max(0.0, from_soc_pct - reserve_soc_pct - reach_safety_buffer_pct)
             energy_kwh = usable_pct / 100.0 * usable_battery_kwh
             return energy_kwh / avg_consumption_kwh_per_km
 
@@ -174,8 +177,8 @@ class MultiStopDijkstraSolver:
                     counter += 1
                     continue
 
-                # Istasyona vardik; rezerv + 3pp buffer.
-                if soc_at_j_pct < reserve_soc_pct + 3.0:
+                # Istasyona vardik; rezerv + 1pp buffer (reach hesabiyla tutarli).
+                if soc_at_j_pct < reserve_soc_pct + reach_safety_buffer_pct:
                     continue
 
                 station = ordered[j]
