@@ -54,11 +54,18 @@ interface Props {
   highlightedStops?: HighlightedStop[]
   vehicleId?: string
   initialSocPct?: number
-  finalSocPct?: number
   usableBatteryKwh?: number
+  // Enerji-temelli sim SOC hesabi icin gerekli.
+  idealConsumptionWhKm?: number
+  // Backend'den gelen baseline kWh/km hesabi icin: total_energy / total_distance.
+  totalEnergyKwh?: number
   // Canli konum (nav-mode bagimsiz). useLiveLocation hook'u doldurur.
   liveLocation?: { lat: number; lon: number; heading: number } | null
   liveLocationVisible?: boolean
+  // Sim aktifken pozisyonu App'e ilet (useDynamicRerouting bunu kullanir).
+  onSimPositionUpdate?: (
+    pos: { lat: number; lon: number; heading: number; speedKmh: number } | null,
+  ) => void
   // Disaridan ref baglanarak haritanin canvas'i export icin yakalanir.
   mapRef?: React.RefObject<MapRef | null>
 }
@@ -77,10 +84,12 @@ export function MapView({
   highlightedStops = [],
   vehicleId,
   initialSocPct,
-  finalSocPct,
   usableBatteryKwh,
+  idealConsumptionWhKm,
+  totalEnergyKwh,
   liveLocation,
   liveLocationVisible = false,
+  onSimPositionUpdate,
   mapRef: externalMapRef,
 }: Props) {
   const internalMapRef = useRef<MapRef | null>(null)
@@ -98,7 +107,12 @@ export function MapView({
   // Simülasyon: rotada otomatik ilerleyen sanal araç
   const [simEnabled, setSimEnabled] = useState<boolean>(false)
   const [simRunning, setSimRunning] = useState<boolean>(false)
-  const [simSpeedMul, setSimSpeedMul] = useState<number>(8) // 1x = gerçek hız, 8x demo
+  // Aracin "gercek" hizi (km/h). Enerji tuketimi ve hiz limiti karsilastirmasi
+  // bunun uzerinden yapilir. Backend energy_model.IDEAL_SPEED_KMH=90 ile uyumlu.
+  const [simVehicleSpeedKmh, setSimVehicleSpeedKmh] = useState<number>(90)
+  // Demo hiz carpani: sim saatinin gercek saate gore ne kadar hizli aktigi.
+  // 1x = gercek zaman; 16x = 1sn gercek = 16sn sim.
+  const [simTimeMul, setSimTimeMul] = useState<number>(8)
   const [simKm, setSimKm] = useState<number>(0) // şu anki kümülatif km
   const [simArrived, setSimArrived] = useState<boolean>(false)
   // Sim'de durağa ulaşıldığında "şarj olunuyor" paneli için durum
@@ -353,13 +367,15 @@ export function MapView({
     if (!simRunning) return
 
     // rAF tabanlı animasyon
+    // stepKm = (aracHizi km/h) * (zaman carpani) * dt(saniye) / 3600
+    // Yani simTimeMul = saatin ne kadar hizli aktigi; simVehicleSpeedKmh
+    // ise aracin gercek hizi (enerji modeli icin onemli).
     let raf = 0
     let lastTs = performance.now()
-    const baseSpeedKmh = 90 // sabit "yol" hızı, sonra speed limit'le çarpılabilir
     const tick = (now: number) => {
       const dt = (now - lastTs) / 1000 // saniye
       lastTs = now
-      const stepKm = (baseSpeedKmh * simSpeedMul * dt) / 3600
+      const stepKm = (simVehicleSpeedKmh * simTimeMul * dt) / 3600
       setSimKm((prev) => {
         const next = prev + stepKm
         if (next >= totalKm) {
@@ -377,12 +393,37 @@ export function MapView({
     navigationMode,
     simEnabled,
     simRunning,
-    simSpeedMul,
+    simVehicleSpeedKmh,
+    simTimeMul,
     hasRoute,
     cumulativeDistances,
     geometry,
     // simKm intentionally NOT in deps — değişince loop yeniden kurulmamalı
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  ])
+
+  // Sim aktifken pozisyonu App'e ilet — useDynamicRerouting bunu canli konum
+  // gibi kullanir. Sim kapaninca null gonder ki hook anchor'u sifirlasin.
+  useEffect(() => {
+    if (!onSimPositionUpdate) return
+    if (simEnabled && pos) {
+      onSimPositionUpdate({
+        lat: pos.lat,
+        lon: pos.lon,
+        heading,
+        // simRunning false ise arac duruyor (kullanici durakta) — hizi 0 ver
+        speedKmh: simRunning ? simVehicleSpeedKmh : 0,
+      })
+    } else if (!simEnabled) {
+      onSimPositionUpdate(null)
+    }
+  }, [
+    simEnabled,
+    simRunning,
+    pos,
+    heading,
+    simVehicleSpeedKmh,
+    onSimPositionUpdate,
   ])
 
   // simKm değişince pozisyonu güncelle (sim duraklasa da harita doğru)
@@ -598,10 +639,10 @@ export function MapView({
     setAnimatedTimeMin(0)
 
     const totalRealMin = chargingCurveQ.data.total_minutes
-    // Animasyonu sim hızına göre kompakte et: 1× hızda 6 sn, 8× hızda ~2sn
+    // Animasyonu demo (zaman) carpanina gore kompakte et: 1x hizda 6sn, 8x hizda ~2sn
     const animDurationMs = Math.max(
       2000,
-      Math.min(8000, (totalRealMin * 60 * 1000) / Math.max(simSpeedMul, 1) / 8),
+      Math.min(8000, (totalRealMin * 60 * 1000) / Math.max(simTimeMul, 1) / 8),
     )
     const totalCurveMin = points[points.length - 1].time_min
 
@@ -639,7 +680,7 @@ export function MapView({
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [chargingStop, chargingCurveQ.data, simSpeedMul])
+  }, [chargingStop, chargingCurveQ.data, simTimeMul])
 
   // Animasyon bitince otomatik devam (küçük gecikmeyle)
   useEffect(() => {
@@ -650,12 +691,36 @@ export function MapView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chargeProgress])
 
-  // Sim'de o anki batarya SOC'si — başlangıç → durakların arrival/target SOC'leri
-  // arası lineer interpolasyon. Şarj sırasında animatedSoc kullanılır.
+  // Anlik tuketim (kWh/km): backend energy_model.IDEAL_SPEED_KMH=90 ile uyumlu
+  // hiz egrisi -> base * (v/90)^1.7. base = total_energy/total_km tercih edilir;
+  // yoksa vehicle ideal_consumption_wh_km/1000; yoksa 0.18 (Avr genel deger).
+  const consumptionKwhPerKm = useMemo(() => {
+    const totalKm = cumulativeDistances[cumulativeDistances.length - 1] || 0
+    let base: number
+    if (totalEnergyKwh != null && totalEnergyKwh > 0 && totalKm > 0) {
+      base = totalEnergyKwh / totalKm
+    } else if (idealConsumptionWhKm != null && idealConsumptionWhKm > 0) {
+      base = idealConsumptionWhKm / 1000
+    } else {
+      base = 0.18
+    }
+    const v = Math.max(5, simVehicleSpeedKmh)
+    const speedFactor = Math.pow(v / 90, 1.7)
+    return base * speedFactor
+  }, [
+    totalEnergyKwh,
+    idealConsumptionWhKm,
+    cumulativeDistances,
+    simVehicleSpeedKmh,
+  ])
+
+  // Sim'de o anki batarya SOC'si — ENERJI-TEMELLI model.
+  // initialSoc'tan baslayip her km icin consumption kadar dusuyoruz.
+  // Tamamlanan duraklarda SOC anlik olarak target'a siciyor.
   const currentSoc = useMemo(() => {
     if (!simEnabled || initialSocPct == null) return null
 
-    // Şarj ediliyorsa canlı animasyon değeri (yoksa durağın varış SOC'si)
+    // Sarj ediliyorsa canli animasyon degeri
     if (chargingStopIdx != null) {
       if (animatedSoc > 0) return animatedSoc
       return (
@@ -663,60 +728,64 @@ export function MapView({
       )
     }
 
-    const totalKm = cumulativeDistances[cumulativeDistances.length - 1] || 0
-    if (totalKm <= 0) return initialSocPct
+    const usable = usableBatteryKwh ?? 60 // makul varsayilan
+    if (usable <= 0) return initialSocPct
 
-    // Mesafeye göre sıralı duraklar (orijinal indeks korunur — completedStops için)
+    // Mesafeye gore sirali duraklar (orijinal idx korunuyor — completedStops kontrolu)
     const sortedStops = highlightedStops
       .map((stop, idx) => ({ stop, idx }))
-      .filter(
-        (x) =>
-          x.stop.arrival_soc_percent != null &&
-          x.stop.target_soc_percent != null,
-      )
+      .filter((x) => x.stop.target_soc_percent != null)
       .sort(
         (a, b) =>
           a.stop.distance_along_route_km - b.stop.distance_along_route_km,
       )
 
-    let segStartKm = 0
-    let segStartSoc = initialSocPct
-    let segEndKm = totalKm
-    let segEndSoc = finalSocPct ?? initialSocPct
+    // Kosumsuz iteratif hesap: 0 -> simKm boyunca consumption uygula,
+    // duraklara geldikce target SOC'a sicra.
+    let soc = initialSocPct
+    let kmCovered = 0
+
+    const consumePctPerKm = (consumptionKwhPerKm / usable) * 100
 
     for (const { stop, idx } of sortedStops) {
+      const stopKm = stop.distance_along_route_km
+      if (stopKm > simKm) break // henuz ulasilmadi
+
+      // 0 (veya son tamamlanan) -> stopKm: tuket
+      const leg = Math.max(0, stopKm - kmCovered)
+      soc -= leg * consumePctPerKm
+      kmCovered = stopKm
+
       if (completedStops.has(idx)) {
-        // Bu durakta şarj olduk — sonraki bacak target'tan başlar
-        segStartKm = stop.distance_along_route_km
-        segStartSoc = stop.target_soc_percent!
-      } else if (stop.distance_along_route_km > simKm) {
-        // Yaklaşan durak — bacağın hedefi arrival SOC
-        segEndKm = stop.distance_along_route_km
-        segEndSoc = stop.arrival_soc_percent!
-        break
+        // Sarj olduk — target'a sicra
+        soc = stop.target_soc_percent!
       } else {
-        // Durağı geçtik ama tamamlanmadı (eşik bölgesi) — arrival SOC'ye düş
-        segStartKm = stop.distance_along_route_km
-        segStartSoc = stop.arrival_soc_percent!
+        // Durakta bekliyoruz (eşik bolgesi); arrival_soc'a clamp et,
+        // boylece "1 km icinde 5% dustu sonra zipladi" gibi anomali olmasin.
+        if (stop.arrival_soc_percent != null) {
+          soc = Math.min(soc, stop.arrival_soc_percent)
+        }
+        // Durakta sayac duruyor — devam etmeden donelim
+        return Math.max(0, Math.min(100, soc))
       }
     }
 
-    if (segEndKm <= segStartKm) return segStartSoc
-    const t = Math.max(
-      0,
-      Math.min(1, (simKm - segStartKm) / (segEndKm - segStartKm)),
-    )
-    return segStartSoc + (segEndSoc - segStartSoc) * t
+    // Son durak (varsa) sonrasi -> simKm: tuket
+    const finalLeg = Math.max(0, simKm - kmCovered)
+    soc -= finalLeg * consumePctPerKm
+
+    return Math.max(0, Math.min(100, soc))
   }, [
     simEnabled,
     initialSocPct,
-    finalSocPct,
     simKm,
     highlightedStops,
     cumulativeDistances,
     completedStops,
     chargingStopIdx,
     animatedSoc,
+    usableBatteryKwh,
+    consumptionKwhPerKm,
   ])
 
   // Sim'de bir sonraki tamamlanmamış şarj durağı + ona kalan km
@@ -1104,18 +1173,39 @@ export function MapView({
                 >
                   {simRunning ? '⏸ Duraklat' : '▶ Oynat'}
                 </button>
-                <select
-                  value={simSpeedMul}
-                  onChange={(e) => setSimSpeedMul(Number(e.target.value))}
-                  className="rounded-md bg-slate-700 px-2 py-1 text-xs text-white"
-                  title="Hız çarpanı (gerçek-saat × N)"
-                >
-                  <option value={1}>1×</option>
-                  <option value={4}>4×</option>
-                  <option value={8}>8×</option>
-                  <option value={16}>16×</option>
-                  <option value={64}>64×</option>
-                </select>
+                <label className="flex items-center gap-1 text-[10px] text-slate-300">
+                  <span>Hız</span>
+                  <select
+                    value={simVehicleSpeedKmh}
+                    onChange={(e) =>
+                      setSimVehicleSpeedKmh(Number(e.target.value))
+                    }
+                    className="rounded-md bg-slate-700 px-2 py-1 text-xs text-white"
+                    title="Aracın gerçek hızı — enerji tüketimi bu hıza göre hesaplanır"
+                  >
+                    <option value={50}>50 km/h</option>
+                    <option value={70}>70 km/h</option>
+                    <option value={90}>90 km/h</option>
+                    <option value={110}>110 km/h</option>
+                    <option value={130}>130 km/h</option>
+                    <option value={150}>150 km/h</option>
+                  </select>
+                </label>
+                <label className="flex items-center gap-1 text-[10px] text-slate-300">
+                  <span>Demo</span>
+                  <select
+                    value={simTimeMul}
+                    onChange={(e) => setSimTimeMul(Number(e.target.value))}
+                    className="rounded-md bg-slate-700 px-2 py-1 text-xs text-white"
+                    title="Sim zaman çarpanı (yalnızca demo hızı; gerçek hızı değiştirmez)"
+                  >
+                    <option value={1}>1×</option>
+                    <option value={4}>4×</option>
+                    <option value={8}>8×</option>
+                    <option value={16}>16×</option>
+                    <option value={64}>64×</option>
+                  </select>
+                </label>
                 <button
                   onClick={handleSimReset}
                   className="rounded-md bg-slate-700 px-2 py-1.5 text-xs hover:bg-slate-600"
@@ -1158,11 +1248,25 @@ export function MapView({
 
           {currentSpeedLimit != null && (
             <div className="pointer-events-none absolute bottom-24 left-6 z-10 flex flex-col items-center">
-              <div className="flex h-20 w-20 items-center justify-center rounded-full border-[6px] border-red-600 bg-white text-2xl font-bold text-slate-900 shadow-lg">
+              <div
+                className={`flex h-20 w-20 items-center justify-center rounded-full border-[6px] bg-white text-2xl font-bold shadow-lg ${
+                  simEnabled && simVehicleSpeedKmh > currentSpeedLimit
+                    ? 'animate-pulse border-red-600 text-red-600 ring-4 ring-red-500/40'
+                    : 'border-red-600 text-slate-900'
+                }`}
+              >
                 {currentSpeedLimit}
               </div>
-              <div className="mt-1 rounded bg-slate-900/80 px-2 py-0.5 text-xs font-medium text-white">
-                km/h
+              <div
+                className={`mt-1 rounded px-2 py-0.5 text-xs font-medium ${
+                  simEnabled && simVehicleSpeedKmh > currentSpeedLimit
+                    ? 'bg-red-600 text-white'
+                    : 'bg-slate-900/80 text-white'
+                }`}
+              >
+                {simEnabled && simVehicleSpeedKmh > currentSpeedLimit
+                  ? `${simVehicleSpeedKmh} > ${currentSpeedLimit}`
+                  : 'km/h'}
               </div>
             </div>
           )}
@@ -1472,12 +1576,29 @@ export function MapView({
                 </div>
               )}
 
-              {/* Orta: Sim progress */}
+              {/* Orta: Sim progress + hiz/tuketim ozeti */}
               <div className="flex flex-col items-center justify-center gap-1 px-5 py-2.5">
                 <div className="flex items-center gap-2 text-xs">
                   <span className="text-slate-300">SİMÜLASYON</span>
-                  <span className="rounded bg-indigo-600 px-1.5 py-0.5 text-[10px] font-bold">
-                    {simSpeedMul}×
+                  <span
+                    className={`rounded px-1.5 py-0.5 text-[10px] font-bold tabular-nums ${
+                      currentSpeedLimit != null &&
+                      simVehicleSpeedKmh > currentSpeedLimit
+                        ? 'animate-pulse bg-red-600 text-white'
+                        : 'bg-indigo-600 text-white'
+                    }`}
+                    title={
+                      currentSpeedLimit != null &&
+                      simVehicleSpeedKmh > currentSpeedLimit
+                        ? `Hız limiti aşıldı: ${currentSpeedLimit} km/h limit, ${simVehicleSpeedKmh} km/h sim`
+                        : 'Araç hızı'
+                    }
+                  >
+                    {simVehicleSpeedKmh}
+                    <span className="ml-0.5 text-[8px] opacity-80">km/h</span>
+                  </span>
+                  <span className="rounded bg-slate-700 px-1.5 py-0.5 text-[10px] font-bold tabular-nums">
+                    {simTimeMul}×
                   </span>
                 </div>
                 <div className="text-sm font-bold tabular-nums">
@@ -1497,6 +1618,9 @@ export function MapView({
                       )}%`,
                     }}
                   />
+                </div>
+                <div className="text-[9px] text-slate-400 tabular-nums">
+                  Tüketim: {(consumptionKwhPerKm * 100).toFixed(1)} kWh/100km
                 </div>
               </div>
 

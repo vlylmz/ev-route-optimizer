@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MapRef } from 'react-map-gl/maplibre'
 import {
   BarChart3,
@@ -26,7 +26,7 @@ import { useOptimize } from './hooks/useOptimize'
 import { useRoute } from './hooks/useRoute'
 import { useSpeedLimits } from './hooks/useSpeedLimits'
 import { useRouteHistory } from './hooks/useRouteHistory'
-import { useLiveLocation } from './hooks/useLiveLocation'
+import { useLiveLocation, type LivePosition } from './hooks/useLiveLocation'
 import { useDynamicRerouting } from './hooks/useDynamicRerouting'
 import { useRouteExport } from './hooks/useRouteExport'
 import type {
@@ -57,6 +57,35 @@ function App() {
   const { pos: livePos, error: liveErr } = useLiveLocation({
     enabled: liveLocationOn,
   })
+  // MapView simulation pozisyonu — sim aktifken App'e gelir, live'in yerine
+  // useDynamicRerouting'a beslenir.
+  const [simPos, setSimPos] = useState<LivePosition | null>(null)
+  const handleSimPositionUpdate = useCallback(
+    (
+      next: {
+        lat: number
+        lon: number
+        heading: number
+        speedKmh: number
+      } | null,
+    ) => {
+      if (!next) {
+        setSimPos(null)
+        return
+      }
+      setSimPos({
+        lat: next.lat,
+        lon: next.lon,
+        heading: next.heading,
+        speedKmh: next.speedKmh,
+        accuracyM: 0,
+        timestamp: Date.now(),
+      })
+    },
+    [],
+  )
+  // useDynamicRerouting icin: sim aktifse onun pozisyonu, degilse gercek GPS.
+  const effectiveLivePos: LivePosition | null = simPos ?? livePos
   const mapRef = useRef<MapRef | null>(null)
   const { exportPng, exportPdf } = useRouteExport()
   const [activeProfileKey, setActiveProfileKey] = useState<string | null>(null)
@@ -204,10 +233,11 @@ function App() {
   }, [optimizeM.data, activeProfileKey])
 
   // Dinamik yeniden rotalama — her 30 km'de bir mevcut rotayi arka planda
-  // yeniden hesaplar. liveLocationOn ile birlikte aktif olur.
+  // yeniden hesaplar. Canli konum VEYA simulasyon (sim varsa sim oncelikli)
+  // aktifken calisir.
   useDynamicRerouting({
-    enabled: dynamicReroutingOn && liveLocationOn,
-    livePos,
+    enabled: dynamicReroutingOn && (liveLocationOn || simPos != null),
+    livePos: effectiveLivePos,
     baseRequest: submitted,
     currentSocPct: activeProfileFinalSoc,
     triggerEveryKm: 30,
@@ -269,10 +299,12 @@ function App() {
         highlightedStops={activeProfileStops}
         vehicleId={submitted?.vehicle_id}
         initialSocPct={optimizeM.data?.initial_soc_pct}
-        finalSocPct={activeProfileFinalSoc ?? undefined}
         usableBatteryKwh={activeVehicle?.usable_battery_kwh}
+        idealConsumptionWhKm={activeVehicle?.ideal_consumption_wh_km}
+        totalEnergyKwh={optimizeM.data?.total_energy_kwh}
         liveLocation={livePos}
         liveLocationVisible={liveLocationOn}
+        onSimPositionUpdate={handleSimPositionUpdate}
         mapRef={mapRef}
       />
 
