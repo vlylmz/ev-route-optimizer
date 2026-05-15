@@ -10,6 +10,7 @@ import Map, {
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useQuery } from '@tanstack/react-query'
+import { Flag, Zap } from 'lucide-react'
 import { postChargingCurve } from '../services/api'
 import { bearingDeg, haversineKm } from '../services/geo'
 import { ChargingCurveChart } from './ChargingCurveChart'
@@ -1121,63 +1122,84 @@ export function MapView({
       {/* Navigation moduna özel kontroller — haritanın üstünde absolute */}
       {navigationMode && (
         <>
-          <div className="pointer-events-auto absolute bottom-6 left-1/2 z-10 flex -translate-x-1/2 items-center gap-3 rounded-full bg-slate-900/90 px-4 py-2 text-white shadow-lg">
-            <label className="flex items-center gap-2 text-xs">
-              <span>Eğim</span>
-              <input
-                type="range"
-                min={0}
-                max={85}
-                value={pitch}
-                onChange={(e) => setPitch(Number(e.target.value))}
-                className="h-1 w-32 accent-emerald-500"
-              />
-              <span className="w-9 text-right tabular-nums">{pitch}°</span>
-            </label>
-            <button
-              type="button"
-              onClick={() => setPitch(85)}
-              className="rounded-md bg-slate-700 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider hover:bg-slate-600"
-              title="Maksimum eğim — araç görüntüsü"
-            >
-              MAX
-            </button>
-            <button
-              onClick={() => setFollowMode((v) => !v)}
-              className={`rounded-md px-3 py-1.5 text-xs ${
-                followMode
-                  ? 'bg-emerald-600 hover:bg-emerald-500'
-                  : 'bg-slate-700 hover:bg-slate-600'
-              }`}
-            >
-              {followMode ? 'Takip: AÇIK' : 'Takip: KAPALI'}
-            </button>
+          <div className="pointer-events-auto absolute bottom-6 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-2xl border border-white/10 bg-gradient-to-br from-slate-900/95 to-slate-800/95 px-3 py-2 text-white shadow-2xl ring-1 ring-black/5 backdrop-blur-xl">
+            {/* Grup 1: Kamera kontrolleri */}
+            <div className="flex items-center gap-2 rounded-xl bg-white/5 px-3 py-1.5">
+              <label className="flex items-center gap-2 text-xs">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                  Eğim
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={85}
+                  value={pitch}
+                  onChange={(e) => setPitch(Number(e.target.value))}
+                  className="h-1 w-28 accent-emerald-500"
+                />
+                <span className="w-9 text-right text-xs font-semibold tabular-nums">
+                  {pitch}°
+                </span>
+              </label>
+              <button
+                type="button"
+                onClick={() => setPitch(85)}
+                className="rounded-md bg-slate-700/80 px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition hover:bg-slate-600"
+                title="Maksimum eğim — araç görüntüsü"
+              >
+                MAX
+              </button>
+              <button
+                onClick={() => setFollowMode((v) => !v)}
+                className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider transition ${
+                  followMode
+                    ? 'bg-emerald-600 text-white shadow-sm hover:bg-emerald-500'
+                    : 'bg-slate-700/80 text-slate-300 hover:bg-slate-600'
+                }`}
+              >
+                <span
+                  className={`inline-block h-1.5 w-1.5 rounded-full ${
+                    followMode ? 'bg-white' : 'bg-slate-400'
+                  }`}
+                />
+                Takip
+              </button>
+            </div>
 
-            <div className="mx-1 h-5 w-px bg-slate-600" />
-
-            {/* Simülasyon kontrolleri */}
+            {/* Grup 2: Simülasyon */}
             {!simEnabled ? (
               <button
                 onClick={handleSimToggle}
-                className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold hover:bg-indigo-500"
+                className="group flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 px-4 py-2 text-xs font-bold shadow-md transition hover:from-indigo-400 hover:to-violet-500 hover:shadow-lg active:scale-95"
                 title="GPS olmadan rotada hareketi simüle et"
               >
-                ▶ Simüle Et
+                <span className="text-base leading-none transition group-hover:translate-x-0.5">
+                  ▶
+                </span>
+                <span>Simüle Et</span>
               </button>
             ) : (
-              <>
+              <div className="flex items-center gap-2 rounded-xl bg-white/5 px-2 py-1.5">
                 <button
                   onClick={() => setSimRunning((v) => !v)}
-                  className={`rounded-md px-3 py-1.5 text-xs ${
+                  className={`flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-bold shadow-md transition active:scale-95 ${
                     simRunning
-                      ? 'bg-amber-600 hover:bg-amber-500'
-                      : 'bg-emerald-600 hover:bg-emerald-500'
+                      ? 'bg-gradient-to-br from-amber-500 to-amber-600 text-white hover:from-amber-400 hover:to-amber-500'
+                      : 'bg-gradient-to-br from-emerald-500 to-emerald-600 text-white hover:from-emerald-400 hover:to-emerald-500'
                   }`}
                 >
-                  {simRunning ? '⏸ Duraklat' : '▶ Oynat'}
+                  <span className="text-base leading-none">
+                    {simRunning ? '⏸' : '▶'}
+                  </span>
+                  <span>{simRunning ? 'Duraklat' : 'Oynat'}</span>
                 </button>
-                <label className="flex items-center gap-1 text-[10px] text-slate-300">
-                  <span>Hız</span>
+
+                <div className="h-7 w-px bg-white/10" />
+
+                <label className="flex items-center gap-1.5">
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                    Hız
+                  </span>
                   <select
                     value={simVehicleSpeedKmh}
                     onChange={(e) => {
@@ -1185,7 +1207,7 @@ export function MapView({
                       setSimVehicleSpeedKmh(v)
                       onSimVehicleSpeedChange?.(v)
                     }}
-                    className="rounded-md bg-slate-700 px-2 py-1 text-xs text-white"
+                    className="cursor-pointer rounded-md border border-white/10 bg-slate-700/80 px-2 py-1 text-xs font-semibold text-white transition hover:bg-slate-600"
                     title="Aracın gerçek hızı — enerji tüketimi bu hıza göre hesaplanır"
                   >
                     <option value={50}>50 km/h</option>
@@ -1196,12 +1218,15 @@ export function MapView({
                     <option value={150}>150 km/h</option>
                   </select>
                 </label>
-                <label className="flex items-center gap-1 text-[10px] text-slate-300">
-                  <span>Demo</span>
+
+                <label className="flex items-center gap-1.5">
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                    Demo
+                  </span>
                   <select
                     value={simTimeMul}
                     onChange={(e) => setSimTimeMul(Number(e.target.value))}
-                    className="rounded-md bg-slate-700 px-2 py-1 text-xs text-white"
+                    className="cursor-pointer rounded-md border border-white/10 bg-slate-700/80 px-2 py-1 text-xs font-semibold text-white transition hover:bg-slate-600"
                     title="Sim zaman çarpanı (yalnızca demo hızı; gerçek hızı değiştirmez)"
                   >
                     <option value={1}>1×</option>
@@ -1211,21 +1236,24 @@ export function MapView({
                     <option value={64}>64×</option>
                   </select>
                 </label>
+
+                <div className="h-7 w-px bg-white/10" />
+
                 <button
                   onClick={handleSimReset}
-                  className="rounded-md bg-slate-700 px-2 py-1.5 text-xs hover:bg-slate-600"
+                  className="rounded-md bg-slate-700/80 px-2 py-1.5 text-xs transition hover:bg-slate-600 active:scale-95"
                   title="Başa sar"
                 >
                   ⟲
                 </button>
                 <button
                   onClick={handleSimToggle}
-                  className="rounded-md bg-red-700 px-2 py-1.5 text-xs hover:bg-red-600"
+                  className="rounded-md bg-red-600/90 px-2 py-1.5 text-xs transition hover:bg-red-500 active:scale-95"
                   title="Simülasyondan çık"
                 >
                   ✕
                 </button>
-              </>
+              </div>
             )}
           </div>
 
@@ -1508,89 +1536,103 @@ export function MapView({
 
           {/* Sim aktifken birleşik üst panel: Batarya · Progress · Sıradaki Durak */}
           {simEnabled && hasRoute && (
-            <div className="pointer-events-none absolute top-4 left-1/2 z-10 flex -translate-x-1/2 items-stretch overflow-hidden rounded-xl bg-slate-900/90 text-white shadow-lg backdrop-blur">
-              {/* Sol: Batarya */}
+            <div className="pointer-events-none absolute top-4 left-1/2 z-10 flex -translate-x-1/2 items-stretch overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-slate-900/95 to-slate-800/95 text-white shadow-2xl ring-1 ring-black/5 backdrop-blur-xl">
+              {/* Sol: Batarya - daha buyuk SVG + net tipografi */}
               {currentSoc != null && (
-                <div className="flex items-center gap-2.5 border-r border-white/10 px-4 py-2.5">
-                  <svg width="26" height="38" viewBox="0 0 32 48">
-                    <rect x="11" y="0" width="10" height="4" rx="1" fill="#cbd5e1" />
-                    <rect
-                      x="2"
-                      y="4"
-                      width="28"
-                      height="42"
-                      rx="3"
-                      fill="rgba(255,255,255,0.08)"
-                      stroke="white"
-                      strokeWidth="2"
-                    />
-                    <rect
-                      x="5"
-                      y={7 + ((100 - currentSoc) / 100) * 36}
-                      width="22"
-                      height={(currentSoc / 100) * 36}
-                      rx="1"
-                      fill={
-                        currentSoc < 20
-                          ? '#ef4444'
-                          : currentSoc < 50
-                          ? '#eab308'
-                          : '#22c55e'
-                      }
-                      style={{ transition: 'all 120ms linear' }}
-                    />
-                    {chargingStopIdx != null && (
-                      <g transform="translate(16 25)">
-                        <path
-                          d="M-4 -8 L2 -1 L-1 -1 L3 8 L-3 1 L0 1 L-4 -8 Z"
-                          fill="white"
-                          className="animate-pulse"
-                        />
-                      </g>
+                <div className="flex items-center gap-3 border-r border-white/10 px-5 py-3">
+                  <div className="relative">
+                    <svg width="32" height="46" viewBox="0 0 32 48">
+                      <rect x="11" y="0" width="10" height="4" rx="1.5" fill="#cbd5e1" />
+                      <rect
+                        x="2"
+                        y="4"
+                        width="28"
+                        height="42"
+                        rx="4"
+                        fill="rgba(255,255,255,0.06)"
+                        stroke="rgba(255,255,255,0.6)"
+                        strokeWidth="2"
+                      />
+                      <rect
+                        x="5"
+                        y={7 + ((100 - currentSoc) / 100) * 36}
+                        width="22"
+                        height={(currentSoc / 100) * 36}
+                        rx="2"
+                        fill={
+                          currentSoc < 20
+                            ? '#ef4444'
+                            : currentSoc < 50
+                            ? '#eab308'
+                            : '#22c55e'
+                        }
+                        style={{ transition: 'all 200ms ease-out' }}
+                      />
+                      {chargingStopIdx != null && (
+                        <g transform="translate(16 25)">
+                          <path
+                            d="M-4 -8 L2 -1 L-1 -1 L3 8 L-3 1 L0 1 L-4 -8 Z"
+                            fill="white"
+                            stroke="rgba(0,0,0,0.4)"
+                            strokeWidth="0.5"
+                            className="animate-pulse"
+                          />
+                        </g>
+                      )}
+                    </svg>
+                    {currentSoc < 20 && (
+                      <span className="absolute -right-1 -top-1 flex h-3 w-3 items-center justify-center">
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500/70" />
+                        <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+                      </span>
                     )}
-                  </svg>
+                  </div>
                   <div className="leading-tight">
-                    <div className="flex items-center gap-1">
-                      <span className="text-[9px] uppercase tracking-wider text-slate-400">
-                        Şarj
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                        Batarya
                       </span>
                       {chargingStopIdx != null && (
-                        <span className="rounded bg-amber-500/90 px-1 py-px text-[8px] font-bold text-slate-900">
-                          DOLUYOR
+                        <span className="flex items-center gap-0.5 rounded-md bg-gradient-to-r from-amber-400 to-amber-500 px-1.5 py-px text-[8px] font-bold uppercase tracking-wider text-slate-900 shadow-sm">
+                          <span className="animate-pulse">⚡</span>
+                          Doluyor
                         </span>
                       )}
                     </div>
                     <div
-                      className={`text-lg font-bold tabular-nums ${
+                      className={`text-2xl font-black tabular-nums tracking-tight ${
                         currentSoc < 20
                           ? 'text-red-400'
                           : currentSoc < 50
                           ? 'text-amber-300'
                           : 'text-emerald-300'
                       }`}
+                      style={{ textShadow: '0 1px 8px rgba(0,0,0,0.4)' }}
                     >
                       %{currentSoc.toFixed(0)}
                     </div>
                     {usableBatteryKwh != null && (
-                      <div className="text-[9px] text-slate-400 tabular-nums">
-                        {((currentSoc / 100) * usableBatteryKwh).toFixed(1)} /{' '}
-                        {usableBatteryKwh.toFixed(0)} kWh
+                      <div className="text-[10px] font-medium text-slate-400 tabular-nums">
+                        {((currentSoc / 100) * usableBatteryKwh).toFixed(1)}
+                        <span className="text-slate-500">
+                          {' / '}
+                          {usableBatteryKwh.toFixed(0)} kWh
+                        </span>
                       </div>
                     )}
                   </div>
                 </div>
               )}
 
-              {/* Orta: Sim progress + hiz/tuketim ozeti */}
-              <div className="flex flex-col items-center justify-center gap-1 px-5 py-2.5">
-                <div className="flex items-center gap-2 text-xs">
-                  <span className="text-slate-300">SİMÜLASYON</span>
+              {/* Orta: Sim progress + hiz/tuketim - daha buyuk hız vurgusu */}
+              <div className="flex min-w-[260px] flex-col items-center justify-center gap-1.5 px-6 py-3">
+                <div className="flex items-center gap-2">
                   <span
-                    className={`rounded px-1.5 py-0.5 text-[10px] font-bold tabular-nums ${
+                    className={`flex items-end gap-0.5 rounded-lg px-2.5 py-1 font-black tabular-nums leading-none shadow-md transition ${
                       currentSpeedLimit != null &&
                       simVehicleSpeedKmh > currentSpeedLimit
-                        ? 'animate-pulse bg-red-600 text-white'
-                        : 'bg-indigo-600 text-white'
+                        ? 'animate-pulse bg-gradient-to-br from-red-500 to-red-600 text-white ring-2 ring-red-400/50'
+                        : 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white'
                     }`}
                     title={
                       currentSpeedLimit != null &&
@@ -1599,64 +1641,87 @@ export function MapView({
                         : 'Araç hızı'
                     }
                   >
-                    {simVehicleSpeedKmh}
-                    <span className="ml-0.5 text-[8px] opacity-80">km/h</span>
+                    <span className="text-xl">{simVehicleSpeedKmh}</span>
+                    <span className="pb-0.5 text-[9px] font-bold uppercase opacity-90">
+                      km/h
+                    </span>
                   </span>
-                  <span className="rounded bg-slate-700 px-1.5 py-0.5 text-[10px] font-bold tabular-nums">
-                    {simTimeMul}×
+                  <div className="flex flex-col items-start gap-0.5">
+                    <span className="rounded-md bg-slate-700/80 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-200">
+                      {simTimeMul}× DEMO
+                    </span>
+                    <span className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                      Sim
+                    </span>
+                  </div>
+                </div>
+                <div className="text-base font-bold tabular-nums tracking-tight text-white/95">
+                  {simKm.toFixed(1)}
+                  <span className="text-slate-500"> / </span>
+                  {(
+                    cumulativeDistances[cumulativeDistances.length - 1] || 0
+                  ).toFixed(0)}
+                  <span className="ml-1 text-[10px] font-medium text-slate-400">
+                    km
                   </span>
                 </div>
-                <div className="text-sm font-bold tabular-nums">
-                  {simKm.toFixed(1)} /{' '}
-                  {(cumulativeDistances[cumulativeDistances.length - 1] || 0).toFixed(0)}{' '}
-                  km
-                </div>
-                <div className="h-1 w-44 overflow-hidden rounded-full bg-slate-700">
+                <div className="relative h-1.5 w-48 overflow-hidden rounded-full bg-slate-700/60">
                   <div
-                    className="h-full bg-emerald-500 transition-all"
+                    className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400 shadow-[0_0_8px_rgba(34,197,94,0.5)] transition-all"
                     style={{
                       width: `${Math.min(
                         100,
                         (simKm /
-                          (cumulativeDistances[cumulativeDistances.length - 1] || 1)) *
+                          (cumulativeDistances[cumulativeDistances.length - 1] ||
+                            1)) *
                           100,
                       )}%`,
                     }}
                   />
                 </div>
-                <div className="text-[9px] text-slate-400 tabular-nums">
-                  Tüketim: {(consumptionKwhPerKm * 100).toFixed(1)} kWh/100km
+                <div className="mt-0.5 flex items-center gap-1 rounded-full bg-slate-800/60 px-2 py-0.5 text-[10px] tabular-nums text-slate-300">
+                  <span className="text-amber-400">⚡</span>
+                  <span className="font-semibold">
+                    {(consumptionKwhPerKm * 100).toFixed(1)}
+                  </span>
+                  <span className="text-slate-500">kWh/100km</span>
                 </div>
               </div>
 
-              {/* Sağ: Sıradaki şarj durağı */}
-              <div className="flex min-w-[140px] max-w-[180px] flex-col justify-center border-l border-white/10 px-4 py-2.5 leading-tight">
+              {/* Sağ: Sıradaki şarj durağı / Hedef - amber accent */}
+              <div className="flex min-w-[160px] max-w-[200px] flex-col justify-center gap-0.5 border-l border-white/10 px-5 py-3 leading-tight">
                 {nextChargingStop ? (
                   <>
-                    <div className="flex items-center gap-1 text-[9px] uppercase tracking-wider text-slate-400">
-                      <span>⚡</span>
+                    <div className="flex items-center gap-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-amber-400/90">
+                      <Zap size={11} className="-mt-0.5 fill-amber-400 stroke-amber-500" />
                       <span>Sıradaki şarj</span>
                     </div>
-                    <div className="text-lg font-bold tabular-nums text-amber-300">
-                      {nextChargingStop.kmAway.toFixed(1)} km
+                    <div className="flex items-baseline gap-1 text-2xl font-black tabular-nums text-amber-300">
+                      {nextChargingStop.kmAway.toFixed(1)}
+                      <span className="text-xs font-bold text-amber-300/70">
+                        km
+                      </span>
                     </div>
-                    <div className="truncate text-[10px] text-slate-300">
+                    <div className="truncate text-[11px] font-medium text-slate-300">
                       {nextChargingStop.stop.name}
                     </div>
                   </>
                 ) : (
                   <>
-                    <div className="text-[9px] uppercase tracking-wider text-slate-400">
-                      🏁 Hedef
+                    <div className="flex items-center gap-1 text-[9px] font-semibold uppercase tracking-[0.12em] text-emerald-400/90">
+                      <Flag size={11} className="-mt-0.5" />
+                      <span>Hedef</span>
                     </div>
-                    <div className="text-lg font-bold tabular-nums text-emerald-300">
+                    <div className="flex items-baseline gap-1 text-2xl font-black tabular-nums text-emerald-300">
                       {(
-                        (cumulativeDistances[cumulativeDistances.length - 1] || 0) -
-                        simKm
-                      ).toFixed(1)}{' '}
-                      km
+                        (cumulativeDistances[cumulativeDistances.length - 1] ||
+                          0) - simKm
+                      ).toFixed(1)}
+                      <span className="text-xs font-bold text-emerald-300/70">
+                        km
+                      </span>
                     </div>
-                    <div className="text-[10px] text-slate-300">
+                    <div className="text-[11px] font-medium text-slate-300">
                       Doğrudan varış
                     </div>
                   </>

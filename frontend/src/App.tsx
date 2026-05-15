@@ -8,9 +8,14 @@ import {
   Gauge,
   History,
   Image as ImageIcon,
+  Leaf,
   MapPin,
   Mountain,
+  Route,
+  Scale,
   Sparkles,
+  Zap,
+  type LucideIcon,
 } from 'lucide-react'
 import { RouteForm } from './components/RouteForm'
 import { MapView } from './components/MapView'
@@ -38,6 +43,54 @@ import type {
 
 function reservationKey(strategyKey: string, idx: number): string {
   return `${strategyKey}::${idx}`
+}
+
+interface StrategyAccent {
+  icon: LucideIcon
+  iconBg: string
+  iconColor: string
+  bar: string
+  activeBg: string
+  activeBorder: string
+  ring: string
+  badgeBg: string
+  badgeText: string
+}
+
+const STRATEGY_ACCENT: Record<string, StrategyAccent> = {
+  fast: {
+    icon: Zap,
+    iconBg: 'bg-rose-500/20',
+    iconColor: 'text-rose-300',
+    bar: 'bg-rose-500',
+    activeBg: 'bg-rose-500/15',
+    activeBorder: 'border-rose-400/60',
+    ring: 'ring-rose-400/30',
+    badgeBg: 'bg-rose-500/90',
+    badgeText: 'text-white',
+  },
+  efficient: {
+    icon: Leaf,
+    iconBg: 'bg-emerald-500/20',
+    iconColor: 'text-emerald-300',
+    bar: 'bg-emerald-500',
+    activeBg: 'bg-emerald-500/15',
+    activeBorder: 'border-emerald-400/60',
+    ring: 'ring-emerald-400/30',
+    badgeBg: 'bg-emerald-500/90',
+    badgeText: 'text-white',
+  },
+  balanced: {
+    icon: Scale,
+    iconBg: 'bg-indigo-500/20',
+    iconColor: 'text-indigo-300',
+    bar: 'bg-indigo-500',
+    activeBg: 'bg-indigo-500/15',
+    activeBorder: 'border-indigo-400/60',
+    ring: 'ring-indigo-400/30',
+    badgeBg: 'bg-indigo-500/90',
+    badgeText: 'text-white',
+  },
 }
 
 function App() {
@@ -376,13 +429,19 @@ function App() {
 
       {/* Şu anki konum etiketi - sim/canli konum aktifken */}
       {navMode && effectiveLivePos && reverseGeocodeQ.data && (
-        <div className="pointer-events-none absolute left-1/2 top-32 z-10 max-w-md -translate-x-1/2 rounded-xl border border-white/20 bg-slate-900/85 px-4 py-2 text-center text-white shadow-lg backdrop-blur">
-          <div className="text-[9px] uppercase tracking-wider text-slate-400">
-            <MapPin size={11} className="-mt-0.5 mr-1 inline" />
-            Şu an
-          </div>
-          <div className="line-clamp-2 text-xs font-semibold leading-snug">
-            {reverseGeocodeQ.data.display_name}
+        <div className="pointer-events-none absolute left-1/2 top-32 z-10 max-w-md -translate-x-1/2 rounded-2xl border border-white/10 bg-gradient-to-br from-slate-900/95 to-slate-800/95 px-4 py-2.5 shadow-2xl ring-1 ring-black/5 backdrop-blur-xl">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-blue-600 shadow-md ring-2 ring-blue-400/30">
+              <MapPin size={14} className="text-white" />
+            </div>
+            <div className="min-w-0 leading-tight">
+              <div className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">
+                Şu an
+              </div>
+              <div className="line-clamp-2 max-w-[320px] text-xs font-semibold text-white">
+                {reverseGeocodeQ.data.display_name}
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -392,56 +451,90 @@ function App() {
         simPos != null &&
         optimizeM.data &&
         optimizeM.data.profiles.length > 1 && (
-          <aside className="pointer-events-auto absolute right-4 top-44 z-10 flex w-56 flex-col gap-2 rounded-xl border border-white/20 bg-slate-900/85 p-2.5 text-white shadow-lg backdrop-blur">
-            <div className="flex items-center gap-1.5 px-1 text-[10px] font-bold uppercase tracking-wider text-slate-300">
-              <span>↺</span>
-              <span>Alternatif Rotalar</span>
+          <aside className="pointer-events-auto absolute right-4 top-44 z-10 flex w-64 flex-col gap-2 rounded-2xl border border-white/10 bg-gradient-to-br from-slate-900/95 to-slate-800/95 p-3 text-white shadow-2xl ring-1 ring-black/5 backdrop-blur-xl">
+            <div className="flex items-center justify-between px-0.5">
+              <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-300">
+                <Route size={12} className="text-indigo-400" />
+                <span>Alternatifler</span>
+              </div>
+              {optimizeM.isPending && (
+                <span className="flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wider text-amber-300">
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400" />
+                  Hesap…
+                </span>
+              )}
             </div>
             {optimizeM.data.profiles
               .filter((p) => p.feasible)
               .map((p) => {
                 const isActive = p.key === activeProfileKey
+                const accent = STRATEGY_ACCENT[p.key] ?? STRATEGY_ACCENT.balanced
+                const Icon = accent.icon
                 return (
                   <button
                     key={p.key}
                     onClick={() => setActiveProfileKey(p.key)}
-                    className={`flex flex-col gap-1 rounded-lg border px-3 py-2 text-left text-xs transition ${
+                    className={`group relative overflow-hidden rounded-xl border px-3 py-2.5 text-left transition active:scale-[0.98] ${
                       isActive
-                        ? 'border-indigo-400 bg-indigo-600/40 ring-1 ring-indigo-400'
-                        : 'border-white/10 bg-white/5 hover:bg-white/10'
+                        ? `${accent.activeBorder} ${accent.activeBg} ring-1 ${accent.ring} shadow-lg`
+                        : 'border-white/5 bg-white/5 hover:border-white/10 hover:bg-white/10'
                     }`}
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold">{p.label}</span>
+                    {/* Sol kenar accent */}
+                    <span
+                      className={`absolute inset-y-0 left-0 w-1 ${
+                        isActive ? accent.bar : 'bg-transparent'
+                      }`}
+                    />
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <div
+                          className={`flex h-6 w-6 items-center justify-center rounded-md ${accent.iconBg}`}
+                        >
+                          <Icon size={12} className={accent.iconColor} />
+                        </div>
+                        <span
+                          className={`text-xs font-bold ${
+                            isActive ? 'text-white' : 'text-slate-200'
+                          }`}
+                        >
+                          {p.label}
+                        </span>
+                      </div>
                       {isActive && (
-                        <span className="rounded bg-indigo-500 px-1.5 py-0.5 text-[9px] font-bold">
-                          AKTİF
+                        <span className={`rounded-md px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider ${accent.badgeBg} ${accent.badgeText}`}>
+                          ✓ Aktif
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-2 text-[10px] text-slate-300">
-                      <span className="tabular-nums">
-                        {(p.total_trip_minutes ?? 0).toFixed(0)} dk
+                    <div className="mt-1.5 flex items-center gap-2.5 text-[10px] tabular-nums">
+                      <span className="font-semibold text-white">
+                        {(p.total_trip_minutes ?? 0).toFixed(0)}
+                        <span className="ml-0.5 font-medium text-slate-400">
+                          dk
+                        </span>
                       </span>
-                      <span>·</span>
-                      <span className="tabular-nums">
-                        {p.stop_count ?? 0} durak
+                      <span className="text-slate-600">·</span>
+                      <span className="font-semibold text-white">
+                        {p.stop_count ?? 0}
+                        <span className="ml-0.5 font-medium text-slate-400">
+                          durak
+                        </span>
                       </span>
                     </div>
-                    <div className="flex items-center gap-2 text-[10px] text-slate-400 tabular-nums">
-                      <span>{(p.total_energy_kwh ?? 0).toFixed(1)} kWh</span>
-                      <span>·</span>
-                      <span>₺{p.total_cost_try.toFixed(0)}</span>
+                    <div className="mt-0.5 flex items-center gap-2.5 text-[10px] tabular-nums text-slate-400">
+                      <span>
+                        {(p.total_energy_kwh ?? 0).toFixed(1)}
+                        <span className="ml-0.5">kWh</span>
+                      </span>
+                      <span className="text-slate-600">·</span>
+                      <span className="font-semibold text-emerald-300">
+                        ₺{p.total_cost_try.toFixed(0)}
+                      </span>
                     </div>
                   </button>
                 )
               })}
-            {optimizeM.isPending && (
-              <div className="flex items-center gap-1.5 rounded-lg border border-amber-400/30 bg-amber-500/10 px-2 py-1.5 text-[10px] text-amber-300">
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400" />
-                Yeniden hesaplanıyor…
-              </div>
-            )}
           </aside>
         )}
 
