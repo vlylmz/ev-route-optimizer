@@ -154,3 +154,17 @@ export async function getGeocode(
   }
 }
 
+export async function getReverseGeocode(
+  lat: number,
+  lon: number,
+): Promise<import('./schemas').GeocodeResultItem | null> {
+  try {
+    const res = await api.get('/reverse-geocode', { params: { lat, lon } })
+    if (res.data == null) return null
+    const { GeocodeResultItemSchema } = await import('./schemas')
+    return GeocodeResultItemSchema.parse(res.data)
+  } catch (err) {
+    rethrow(err)
+  }
+}
+

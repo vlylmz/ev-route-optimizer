@@ -29,6 +29,7 @@ import { useRouteHistory } from './hooks/useRouteHistory'
 import { useLiveLocation, type LivePosition } from './hooks/useLiveLocation'
 import { useDynamicRerouting } from './hooks/useDynamicRerouting'
 import { useRouteExport } from './hooks/useRouteExport'
+import { useReverseGeocode } from './hooks/useReverseGeocode'
 import type {
   GeocodeResultItem,
   OptimizeRequest,
@@ -86,8 +87,46 @@ function App() {
   )
   // useDynamicRerouting icin: sim aktifse onun pozisyonu, degilse gercek GPS.
   const effectiveLivePos: LivePosition | null = simPos ?? livePos
+  // Suanki konum etiketi: sim aktifse sim pos, yoksa GPS pos.
+  const reverseGeocodeQ = useReverseGeocode({
+    enabled: effectiveLivePos != null,
+    lat: effectiveLivePos?.lat,
+    lon: effectiveLivePos?.lon,
+    minMoveKm: 0.5,
+    minIntervalMs: 5000,
+  })
   const mapRef = useRef<MapRef | null>(null)
   const { exportPng, exportPdf } = useRouteExport()
+
+  // Sim hızı degisince debounced reroute: kullanici 130 -> 90'a indirirken
+  // her ara degeri ayri istek olmasin. 2sn bekle, son halini gonder.
+  const speedRerouteTimerRef = useRef<number | null>(null)
+  const handleSimVehicleSpeedChange = useCallback(
+    (kmh: number) => {
+      if (speedRerouteTimerRef.current != null) {
+        window.clearTimeout(speedRerouteTimerRef.current)
+      }
+      speedRerouteTimerRef.current = window.setTimeout(() => {
+        if (!submitted || !simPos) return
+        // Mevcut konumdan + son sim SOC'siyle reroute. simSpeed bilgisi
+        // backend'e gitmez (planner kendi modelini kullanir) ama yine de
+        // mevcut konumdan yeni alternatifler uretir.
+        const newReq = {
+          ...submitted,
+          start: { lat: simPos.lat, lon: simPos.lon },
+        }
+        setSubmitted(newReq)
+        optimizeM.mutate(newReq)
+        routeM.mutate({ start: newReq.start, end: newReq.end })
+        // eslint-disable-next-line no-console
+        console.info(
+          `[sim] hiz degisti (${kmh} km/h) -> reroute tetiklendi`,
+        )
+      }, 2000)
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [submitted, simPos],
+  )
   const [activeProfileKey, setActiveProfileKey] = useState<string | null>(null)
   const [pendingPreset, setPendingPreset] = useState<{
     start: GeocodeResultItem
@@ -305,6 +344,7 @@ function App() {
         liveLocation={livePos}
         liveLocationVisible={liveLocationOn}
         onSimPositionUpdate={handleSimPositionUpdate}
+        onSimVehicleSpeedChange={handleSimVehicleSpeedChange}
         mapRef={mapRef}
       />
 
@@ -333,6 +373,77 @@ function App() {
           ✕ Navigasyondan Çık
         </button>
       )}
+
+      {/* Şu anki konum etiketi - sim/canli konum aktifken */}
+      {navMode && effectiveLivePos && reverseGeocodeQ.data && (
+        <div className="pointer-events-none absolute left-1/2 top-32 z-10 max-w-md -translate-x-1/2 rounded-xl border border-white/20 bg-slate-900/85 px-4 py-2 text-center text-white shadow-lg backdrop-blur">
+          <div className="text-[9px] uppercase tracking-wider text-slate-400">
+            <MapPin size={11} className="-mt-0.5 mr-1 inline" />
+            Şu an
+          </div>
+          <div className="line-clamp-2 text-xs font-semibold leading-snug">
+            {reverseGeocodeQ.data.display_name}
+          </div>
+        </div>
+      )}
+
+      {/* Alternatif rotalar paneli - sim aktifken, sag tarafta */}
+      {navMode &&
+        simPos != null &&
+        optimizeM.data &&
+        optimizeM.data.profiles.length > 1 && (
+          <aside className="pointer-events-auto absolute right-4 top-44 z-10 flex w-56 flex-col gap-2 rounded-xl border border-white/20 bg-slate-900/85 p-2.5 text-white shadow-lg backdrop-blur">
+            <div className="flex items-center gap-1.5 px-1 text-[10px] font-bold uppercase tracking-wider text-slate-300">
+              <span>↺</span>
+              <span>Alternatif Rotalar</span>
+            </div>
+            {optimizeM.data.profiles
+              .filter((p) => p.feasible)
+              .map((p) => {
+                const isActive = p.key === activeProfileKey
+                return (
+                  <button
+                    key={p.key}
+                    onClick={() => setActiveProfileKey(p.key)}
+                    className={`flex flex-col gap-1 rounded-lg border px-3 py-2 text-left text-xs transition ${
+                      isActive
+                        ? 'border-indigo-400 bg-indigo-600/40 ring-1 ring-indigo-400'
+                        : 'border-white/10 bg-white/5 hover:bg-white/10'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold">{p.label}</span>
+                      {isActive && (
+                        <span className="rounded bg-indigo-500 px-1.5 py-0.5 text-[9px] font-bold">
+                          AKTİF
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 text-[10px] text-slate-300">
+                      <span className="tabular-nums">
+                        {(p.total_trip_minutes ?? 0).toFixed(0)} dk
+                      </span>
+                      <span>·</span>
+                      <span className="tabular-nums">
+                        {p.stop_count ?? 0} durak
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[10px] text-slate-400 tabular-nums">
+                      <span>{(p.total_energy_kwh ?? 0).toFixed(1)} kWh</span>
+                      <span>·</span>
+                      <span>₺{p.total_cost_try.toFixed(0)}</span>
+                    </div>
+                  </button>
+                )
+              })}
+            {optimizeM.isPending && (
+              <div className="flex items-center gap-1.5 rounded-lg border border-amber-400/30 bg-amber-500/10 px-2 py-1.5 text-[10px] text-amber-300">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400" />
+                Yeniden hesaplanıyor…
+              </div>
+            )}
+          </aside>
+        )}
 
       {/* Sidebar */}
       {sidebarOpen && (

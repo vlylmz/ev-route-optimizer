@@ -66,6 +66,8 @@ interface Props {
   onSimPositionUpdate?: (
     pos: { lat: number; lon: number; heading: number; speedKmh: number } | null,
   ) => void
+  // Kullanici sim hizini degistirince App'e haber ver (reroute trigger icin).
+  onSimVehicleSpeedChange?: (kmh: number) => void
   // Disaridan ref baglanarak haritanin canvas'i export icin yakalanir.
   mapRef?: React.RefObject<MapRef | null>
 }
@@ -90,6 +92,7 @@ export function MapView({
   liveLocation,
   liveLocationVisible = false,
   onSimPositionUpdate,
+  onSimVehicleSpeedChange,
   mapRef: externalMapRef,
 }: Props) {
   const internalMapRef = useRef<MapRef | null>(null)
@@ -1177,9 +1180,11 @@ export function MapView({
                   <span>Hız</span>
                   <select
                     value={simVehicleSpeedKmh}
-                    onChange={(e) =>
-                      setSimVehicleSpeedKmh(Number(e.target.value))
-                    }
+                    onChange={(e) => {
+                      const v = Number(e.target.value)
+                      setSimVehicleSpeedKmh(v)
+                      onSimVehicleSpeedChange?.(v)
+                    }}
                     className="rounded-md bg-slate-700 px-2 py-1 text-xs text-white"
                     title="Aracın gerçek hızı — enerji tüketimi bu hıza göre hesaplanır"
                   >

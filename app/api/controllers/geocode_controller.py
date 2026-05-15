@@ -1,10 +1,13 @@
 """
 GET /geocode?q=Ankara — yer adı → koordinat (Nominatim / OSM).
+GET /reverse-geocode?lat=...&lon=... — koordinat → yer adı.
 
-Frontend autocomplete için.
+Frontend autocomplete + sim icin canli konum etiketi.
 """
 
 from __future__ import annotations
+
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -51,4 +54,36 @@ def geocode_search(
             )
             for r in results
         ],
+    )
+
+
+@router.get(
+    "/reverse-geocode",
+    response_model=Optional[GeocodeResultItem],
+    summary="Koordinat -> yer adi (Nominatim/OSM reverse)",
+    responses={502: {"description": "Nominatim hatası"}},
+)
+def reverse_geocode(
+    lat: float = Query(..., ge=-90.0, le=90.0),
+    lon: float = Query(..., ge=-180.0, le=180.0),
+    service: NominatimGeocodingService = Depends(get_geocoding_service),
+) -> Optional[GeocodeResultItem]:
+    try:
+        result = service.reverse(lat=lat, lon=lon)
+    except GeocodingServiceError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Reverse geocode error: {exc}",
+        ) from exc
+
+    if result is None:
+        return None
+    return GeocodeResultItem(
+        display_name=result.display_name,
+        name=result.name,
+        lat=result.lat,
+        lon=result.lon,
+        type=result.type,
+        importance=result.importance,
+        country_code=result.country_code,
     )
